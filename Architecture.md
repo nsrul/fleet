@@ -1,6 +1,6 @@
 # Director Architecture
 
-Status: the workspace foundation and daemon lifecycle are implemented (issue #1). PTY-backed sessions are designed but not implemented (issue #2). The local API, desktop UI, and persistence are planned for later issues.
+Status: the workspace foundation, daemon lifecycle (issue #1), and PTY-backed sessions (issue #2) are implemented. The local API, desktop UI, and persistence are planned for later issues.
 
 Companion diagram: `assets/architecture.png`.
 
@@ -52,7 +52,7 @@ Installed agent CLIs use their own credentials, permissions, and provider connec
 ### `director-engine`
 
 - Library independent of clients, transport, and OS signals.
-- Owns the engine lifecycle and, after issue #2, the session registry.
+- Owns the engine lifecycle and the session registry.
 - Provides session spawn, input, output, resize, termination, and exit tracking.
 - Contains no daemon-specific logging setup or socket code.
 
@@ -71,7 +71,7 @@ Installed agent CLIs use their own credentials, permissions, and provider connec
 
 ## 4. Runtime and concurrency model
 
-The daemon currently uses a single-threaded Tokio runtime. Session support must therefore not block the runtime thread with PTY I/O.
+The daemon currently uses a single-threaded Tokio runtime. Session support therefore keeps PTY I/O off the runtime thread.
 
 The session implementation uses three kinds of work per session:
 
@@ -181,7 +181,7 @@ Resize validates non-zero rows and columns, calls `MasterPty::resize`, and updat
 
 ## 7. Public engine surface
 
-The planned API is approximately:
+The implemented API is approximately:
 
 ```rust
 pub struct SessionHandle { /* shared session state */ }
@@ -191,36 +191,45 @@ impl SessionHandle {
     pub fn pid(&self) -> Option<u32>;
     pub fn status(&self) -> SessionStatus;
     pub fn status_changes(&self) -> watch::Receiver<SessionStatus>;
-    pub async fn input(&self, bytes: &[u8]) -> Result<()>;
-    pub fn resize(&self, size: TerminalSize) -> Result<()>;
-    pub async fn terminate(&self) -> Result<SessionExit>;
+    pub async fn input(&self, bytes: &[u8]) -> Result<(), SessionError>;
+    pub fn resize(&self, size: TerminalSize) -> Result<(), SessionError>;
+    pub async fn terminate(&self) -> Result<SessionExit, SessionError>;
     pub async fn wait(&self) -> SessionExit;
     pub fn output_snapshot(&self) -> OutputSnapshot;
     pub fn subscribe_output(&self) -> broadcast::Receiver<OutputChunk>;
 }
 
 impl Engine {
-    pub fn spawn_session(&mut self, spec: SessionSpec) -> Result<SessionHandle>;
+    pub fn state(&self) -> EngineState;
+    pub fn spawn_session(&mut self, spec: SessionSpec) -> Result<SessionHandle, EngineError>;
     pub fn session(&self, id: &SessionId) -> Option<SessionHandle>;
     pub fn sessions(&self) -> Vec<SessionInfo>;
     pub async fn shutdown(&mut self);
 }
 ```
 
-The names may change during implementation. The boundaries should not: the engine exposes runtime semantics, not wire messages, and handles remain cloneable so I/O and observation do not require borrowing the whole engine.
+The names may still evolve. The boundaries should not: the engine exposes runtime semantics, not wire messages, and handles remain cloneable so I/O and observation do not require borrowing the whole engine.
 
 ## 8. Error model
 
-The engine uses typed errors rather than `anyhow` at its public boundary. Expected variants include:
+The engine uses typed errors rather than exposing `anyhow` at its public boundary. `SessionError` includes:
 
+- `InvalidSessionId`
+- `InvalidProgram`
+- `MissingWorkingDirectory`
+- `InvalidTerminalSize`
 - `DuplicateSessionId`
 - `SessionNotFound`
-- `SpawnFailed`
 - `SessionClosed`
-- `InvalidTerminalSize`
-- `WriteFailed`
+- `SpawnFailed`
+- `InputFailed`
 - `ResizeFailed`
 - `TerminationFailed`
+- `TerminationTimedOut`
+- `MissingRuntime`
+- `TaskFailed`
+
+`EngineError` adds `Stopped` for operations attempted after engine shutdown.
 
 Spawn failures do not leave a partially registered session. Termination and shutdown are best-effort with bounded waits; failures are reported or logged but must not wedge the daemon indefinitely.
 
@@ -254,21 +263,19 @@ Tests use real PTYs but do not require agent CLIs to be installed. Shell command
 
 Unit coverage:
 
-- terminal-size and session-ID validation;
-- duplicate and missing session errors;
+- session-ID and terminal-size validation;
 - bounded-buffer eviction and monotonic sequence numbers.
 
 Integration coverage (Unix-gated, with bounded waits):
 
 - spawn, PID, and running status;
-- working-directory and environment inheritance;
-- per-session environment overrides;
+- working-directory and environment inheritance, including per-session overrides;
 - input/output round trip;
 - resize visibility through `stty size`;
 - explicit termination and idempotence;
 - normal and non-zero exits;
 - process-group termination including a grandchild;
-- two concurrent sessions with independent I/O, resize, and termination;
+- two concurrent sessions with independent I/O, environment, and termination;
 - engine shutdown terminating all sessions.
 
 Existing daemon subprocess tests remain valid: startup, readiness, JSON logs on stderr, and clean signal shutdown.
@@ -300,7 +307,7 @@ cargo metadata --no-deps --format-version 1 --locked
 | Issue | Scope | Status |
 | --- | --- | --- |
 | #1 | Rust workspace, engine lifecycle, standalone daemon, logging, signals | Done |
-| #2 | PTY-backed sessions, I/O, resize, termination, exit tracking, concurrency | Designed |
+| #2 | PTY-backed sessions, I/O, resize, termination, exit tracking, concurrency | Done |
 | #3 | Versioned local session API over a user-owned socket/pipe | Planned |
 | #4 | UI framework decision and two-pane terminal prototype | Planned |
 | #5 | Persistence, ordered replay, UI reattachment | Planned |

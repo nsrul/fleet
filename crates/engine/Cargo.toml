@@ -3,5 +3,16 @@ name = "director-engine"
 version.workspace = true
 edition.workspace = true
 
+[dependencies]
+anyhow.workspace = true
+portable-pty.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tracing.workspace = true
+
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
