@@ -9,13 +9,13 @@ A proposed desktop workspace for running and coordinating coding agents, backed 
 The Rust daemon owns agent processes and terminal sessions independently of the desktop UI. Closing the UI detaches the client; running agents continue until they exit or the daemon stops.
 
 - **Desktop frontend:** GPUI for a Rust interface across desktop platforms, or SwiftUI with AppKit for a Mac-focused app.
-- **Local API:** versioned commands, events, and terminal streams shared by the UI, CLI, and MCP adapters.
+- **Local API:** a versioned Unix-socket API with commands, events, and bounded terminal streams for the planned UI, CLI, and MCP adapters.
 - **Session engine:** agent lifecycle, scheduling, task coordination, action policy, and worktree ownership.
 - **PTY and terminal host:** process input/output, resizing, bounded buffers, and session reattachment.
 - **Persistence:** SQLite and session journals for task state, metadata, history, and recovery.
 - **Agent tools:** installed CLI agents use their own credentials and permissions, connecting directly to their model providers.
 
-This diagram describes the proposed design. The Rust workspace currently provides an engine with PTY-backed sessions and a standalone daemon; the local API, desktop frontend, and persistence have not been implemented yet.
+This diagram describes the proposed design. The Rust workspace currently provides an engine with PTY-backed sessions and a standalone daemon serving a Unix local API; the desktop frontend, persistence, and Windows local transport have not been implemented yet.
 
 The first milestone is one project with two live agent sessions, reliable terminal input and resizing, and reconnecting the UI without restarting agents.
 
@@ -24,10 +24,56 @@ The first milestone is one project with two live agent sessions, reliable termin
 The workspace uses Rust edition 2024 and Cargo resolver 3:
 
 - `crates/engine` (`director-engine`): engine lifecycle and PTY-backed sessions, independent of clients, transport, and OS signals.
-- `crates/protocol` (`director-protocol`): shared protocol version and serializable daemon states used in lifecycle logs.
-- `crates/daemon` (`director-daemon`): runtime, configuration, JSON logging, and signal handling. It depends on both libraries; the libraries do not depend on each other.
+- `crates/protocol` (`director-protocol`): shared protocol version, serializable daemon states, local API messages, error codes, and size limits.
+- `crates/daemon` (`director-daemon`): runtime, socket configuration, JSON logging, signal handling, and the Unix local API server. It depends on both libraries; the libraries do not depend on each other.
 
-The daemon runs in the foreground without a UI. It starts the engine, reports readiness, and waits for a shutdown signal. The engine can spawn, interact with, resize, and terminate PTY sessions, but the daemon does not yet expose a command channel or local API, so clients cannot create sessions. Nothing is persisted across daemon restarts.
+The daemon runs in the foreground without a UI. It starts the engine, binds a user-owned Unix socket, reports readiness, and serves versioned requests from local clients. Clients can create, list, inspect, and stop sessions; attach and detach; stream ordered output and status; send input; and resize. Nothing is persisted across daemon restarts. On Windows the daemon currently starts without a local API.
+
+## Local API
+
+The local API is Unix-only in this pass. The default socket is `$XDG_RUNTIME_DIR/director/daemon.sock`, or `<system-temp>/director-<uid>/daemon.sock` when `XDG_RUNTIME_DIR` is unset (`$TMPDIR` is used when defined). Precedence is `--socket <path>` / `--socket=<path>`, then `DIRECTOR_SOCKET`, then the default. Relative paths resolve against the working directory; socket paths are limited to 100 bytes. The daemon creates missing parents, keeps the default parent at `0700`, refuses symlinked or foreign-owned parents (including `/tmp` itself), and restricts the socket to `0600`. Use a per-user parent such as `$HOME/.director`. Accepted peers must have the daemon user's UID.
+
+Frames are a 4-byte big-endian length followed by UTF-8 JSON; the limit is 4 MiB per frame. Binary terminal data is base64. The first frame must be a `hello` with protocol version 1 within five seconds. Requests then carry a client-chosen `request_id` and a command: `create_session`, `list_sessions`, `inspect_session`, `stop_session`, `input`, `resize`, `attach_session`, or `detach_session`.
+
+An attach response includes session metadata and a retained output snapshot. Subsequent `output` events carry monotonic sequence numbers, and `status` events report state changes. The daemon serves at most 32 clients, bounds each outbound queue, and disconnects clients that fall behind (sending `slow_client` when the queue has room); reattach to resynchronize. Input is limited to 1 MiB per request. On shutdown, attached clients receive `daemon_stopping`.
+
+Start a daemon on an explicit socket and try the API:
+
+```sh
+cargo run -p director-daemon --locked -- --socket "$HOME/.director/daemon.sock"
+```
+
+```python
+import json, os, socket, struct
+
+sock = socket.socket(socket.AF_UNIX)
+sock.connect(os.path.expanduser("~/.director/daemon.sock"))
+
+def send(message):
+    payload = json.dumps(message).encode()
+    sock.sendall(struct.pack(">I", len(payload)) + payload)
+
+def receive():
+    header = b""
+    while len(header) < 4:
+        chunk = sock.recv(4 - len(header))
+        if not chunk:
+            raise EOFError("daemon closed the connection")
+        header += chunk
+    (size,) = struct.unpack(">I", header)
+    payload = b""
+    while len(payload) < size:
+        chunk = sock.recv(size - len(payload))
+        if not chunk:
+            raise EOFError("daemon closed the connection")
+        payload += chunk
+    return json.loads(payload)
+
+send({"type": "hello", "protocol_version": 1, "client": "readme"})
+print(receive())
+send({"type": "request", "request_id": 1, "command": {"command": "list_sessions"}})
+print(receive())
+```
 
 ## Build and run
 
@@ -47,7 +93,7 @@ RUST_LOG=director_daemon=info cargo run -p director-daemon --locked
 
 An invalid `RUST_LOG` exits with status 1 and a JSON error. Filtering out INFO hides readiness and normal lifecycle events. Startup failures and shutdown errors also exit with status 1.
 
-On Unix, SIGINT (Ctrl-C) and SIGTERM handlers are registered before the `ready` event, which includes the version, protocol version, PID, and engine state. On Windows, the daemon registers a Ctrl-C handler. After a signal it logs `shutdown_requested`, awaits idempotent engine shutdown with a five-second deadline, logs `stopped`, and exits with status 0. Engine shutdown terminates every session with bounded waits. Stopping the foreground daemon stops the engine and its child processes; running it does not install a system service.
+On Unix, SIGINT (Ctrl-C) and SIGTERM handlers are registered before the `ready` event, which includes the version, protocol version, PID, engine state, and socket path. On Windows, the daemon registers a Ctrl-C handler and reports `api="unavailable"`. After a signal it logs `shutdown_requested`, notifies attached clients, awaits idempotent engine shutdown with a five-second deadline, removes the socket, logs `stopped`, and exits with status 0. Engine shutdown terminates every session with bounded waits. Stopping the foreground daemon stops the engine and its child processes; running it does not install a system service.
 
 To run the release binary directly:
 
@@ -65,4 +111,4 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo metadata --no-deps --format-version 1 --locked
 ```
 
-Tests cover engine shutdown, PTY session lifecycle and I/O, protocol state serialization, and Unix daemon subprocess behavior: operation without a UI, clean SIGINT/SIGTERM exit, JSON logs on stderr, and invalid logging configuration. Session tests use real PTYs with `/bin/sh` and `stty`, so they do not require agent CLIs. Process tests allow up to 30 seconds for startup and shutdown to tolerate loaded CI hosts and terminate/reap children on failure. The engine's own shutdown deadline remains five seconds. Unix subprocess signal tests are platform-gated; Windows Ctrl-C behavior and process-tree containment have not been validated here.
+Tests cover engine shutdown, PTY session lifecycle and I/O, protocol serialization, the local API, and Unix daemon subprocess behavior: operation without a UI, clean SIGINT/SIGTERM exit, JSON logs on stderr, and invalid logging configuration. API tests exercise handshake and version checks, owner-only socket permissions, malformed and oversized frames, create/list/inspect/stop, ordered output/input/status, snapshot replay, resize, multi-client attachment, live/stale sockets, and shutdown notification. Session tests use real PTYs with `/bin/sh` and `stty`, so they do not require agent CLIs. Process tests allow up to 30 seconds for startup and shutdown to tolerate loaded CI hosts and terminate/reap children on failure. The engine's own shutdown deadline remains five seconds. Unix subprocess and local API tests are platform-gated; Windows Ctrl-C behavior, named pipes, and process-tree containment have not been validated here.

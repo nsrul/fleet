@@ -1,4 +1,6 @@
-//! Shared daemon version and state vocabulary. No command transport exists yet.
+//! Shared daemon version, lifecycle state, and local API vocabulary.
+
+pub mod api;
 
 use serde::{Deserialize, Serialize};
 
