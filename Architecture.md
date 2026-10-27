@@ -1,6 +1,6 @@
 # Director Architecture
 
-Status: the workspace foundation, daemon lifecycle (issue #1), PTY-backed sessions (issue #2), and the Unix local API (issue #3) are implemented. The desktop UI, persistence, and the Windows named-pipe transport are planned for later work.
+Status: the workspace foundation, daemon lifecycle (issue #1), PTY-backed sessions (issue #2), the Unix local API (issue #3), and a SwiftUI two-pane macOS prototype (issue #4) are implemented. Persistence, ordered replay, and the Windows named-pipe transport are planned for later work.
 
 Companion diagram: `assets/architecture.png`.
 
@@ -18,7 +18,7 @@ The architecture separates process ownership from presentation:
 ## 2. System context
 
 ```text
-Desktop UI (planned)  ─┐
+Desktop UI (SwiftUI, prototype) ─┐
 CLI adapter (planned) ─┼─ Unix socket (#3) ──────────┐
 MCP adapter (planned) ─┘                             │
                                                      v
@@ -64,11 +64,20 @@ Installed agent CLIs use their own credentials, permissions, and provider connec
 - Contains serialization types only; framing and transport live in the daemon.
 - The engine must not depend on the protocol crate; mapping between runtime types and wire types happens at the daemon boundary.
 
+### macOS frontend (`apps/macos`)
+
+- SwiftUI application shell with AppKit interop for terminal hosting.
+- `DirectorKit` local package contains the typed local API client (`DirectorAPI`) and a CLI probe (`DirectorProbe`).
+- `AppModel` owns connection state, sessions, attach/input/resize calls, focus, layout, and git status. `TerminalController` owns each SwiftTerm view and its delegate.
+- SwiftTerm 1.99.1 renders terminal output, scrollback, selection, and keyboard input. The daemon sends raw PTY bytes; the frontend owns emulation.
+- Layout follows the Figma prototype: 256 pt sidebar, terminal panes, 504 pt git context panel, stacked or side-by-side panes.
+- Current limitation: one project, no persistence, and no session-list-changed event. Externally created sessions require reconnect or relaunch. Fork starts a new process with the same program and working directory, not a forked conversation.
+
 ### Future components
 
 - **Windows local transport:** a restricted named pipe with the same protocol, deferred from this Unix-only pass; the non-Unix daemon reports `api="unavailable"`.
-- **Desktop UI (#4):** GPUI or SwiftUI/AppKit, rendering terminal panes from daemon streams.
 - **Persistence and reattachment (#5):** SQLite metadata plus session journals, snapshot or ordered replay, and accurate interrupted-session status after a daemon restart.
+- **Cross-platform frontend:** a second frontend or a shared renderer if Windows or Linux becomes a target.
 
 ## 4. Runtime and concurrency model
 
@@ -366,6 +375,14 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo metadata --no-deps --format-version 1 --locked
 ```
 
+The macOS prototype adds `apps/macos/scripts/verify-terminal.sh`, which runs the
+`DirectorKit` unit tests, starts a real daemon on a temporary socket, and runs
+`DirectorProbe --smoke` for create, input/output, Unicode, resize, and exit. The
+app-level checklist covers two live panes, keyboard input, Unicode, selection
+and copy, scrollback, pane/window resize, focus switching, and reattachment
+after relaunch. It was exercised with Claude Code 2.1.311 and Gemini CLI 0.46.0
+on macOS 27. The app has no CI job yet; see `apps/macos/README.md`.
+
 ## 13. Key decisions
 
 | Decision | Rationale | Consequence |
@@ -376,6 +393,7 @@ cargo metadata --no-deps --format-version 1 --locked
 | Caller-supplied session IDs | Makes commands deterministic and lets clients correlate responses. | The engine must reject duplicates and validate IDs. |
 | Bounded output backlog | Prevents unbounded memory growth. | Old output is discarded and slow subscribers must resynchronize. |
 | Raw bytes, no terminal emulation | Separates process I/O from rendering concerns. | A real terminal screen cannot be reconstructed until #5. |
+| SwiftUI + SwiftTerm for the macOS prototype | Native shell with a mature terminal widget instead of writing emulation. | Mac-only frontend; SwiftTerm is a pinned third-party dependency; other platforms need a separate decision. |
 | Process-group termination on Unix | Prevents orphaned descendants. | Windows needs a different mechanism and currently has weaker guarantees. |
 | Unix socket plus length-prefixed JSON | Gives strict ownership/permission control with a debuggable, versioned wire format. | Windows needs a named-pipe transport; JSON/base64 costs some throughput. |
 | Daemon-level engine mutex | API tasks need shared access on the current-thread runtime without changing engine ownership semantics. | Long engine operations are serialized at command boundaries; session I/O uses cloned handles. |
@@ -389,7 +407,7 @@ cargo metadata --no-deps --format-version 1 --locked
 | #1 | Rust workspace, engine lifecycle, standalone daemon, logging, signals | Done |
 | #2 | PTY-backed sessions, I/O, resize, termination, exit tracking, concurrency | Done |
 | #3 | Versioned local session API over a user-owned Unix socket | Done (named pipe deferred) |
-| #4 | UI framework decision and two-pane terminal prototype | Planned |
+| #4 | UI framework decision and two-pane terminal prototype | Done (SwiftUI prototype) |
 | #5 | Persistence, ordered replay, UI reattachment | Planned |
 
 The ordering is intentional: transport and UI depend on the engine owning sessions; reattachment depends on a stable session and event model.
@@ -409,5 +427,6 @@ The ordering is intentional: transport and UI depend on the engine owning sessio
 - How should a GUI-launched daemon obtain the user's login-shell environment?
 - What retention policy should apply to exited sessions and their output backlogs?
 - Which terminal-state representation will issue #5 use for snapshots, and how will it interoperate with the chosen frontend terminal widget?
+- If Windows or Linux becomes a target, should the SwiftUI frontend be ported, a second native frontend be built, or a shared web terminal be adopted?
 - When should a Windows named-pipe transport be added, and should socket discovery differ there?
 - How should the protocol evolve beyond version 1 while keeping old clients diagnosable?

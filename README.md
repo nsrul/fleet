@@ -8,14 +8,14 @@ A proposed desktop workspace for running and coordinating coding agents, backed 
 
 The Rust daemon owns agent processes and terminal sessions independently of the desktop UI. Closing the UI detaches the client; running agents continue until they exit or the daemon stops.
 
-- **Desktop frontend:** GPUI for a Rust interface across desktop platforms, or SwiftUI with AppKit for a Mac-focused app.
+- **Desktop frontend:** a SwiftUI macOS prototype in `apps/macos` with AppKit and SwiftTerm for terminal rendering. GPUI remains an option for a future cross-platform frontend.
 - **Local API:** a versioned Unix-socket API with commands, events, and bounded terminal streams for the planned UI, CLI, and MCP adapters.
 - **Session engine:** agent lifecycle, scheduling, task coordination, action policy, and worktree ownership.
 - **PTY and terminal host:** process input/output, resizing, bounded buffers, and session reattachment.
 - **Persistence:** SQLite and session journals for task state, metadata, history, and recovery.
 - **Agent tools:** installed CLI agents use their own credentials and permissions, connecting directly to their model providers.
 
-This diagram describes the proposed design. The Rust workspace currently provides an engine with PTY-backed sessions and a standalone daemon serving a Unix local API; the desktop frontend, persistence, and Windows local transport have not been implemented yet.
+This diagram describes the proposed design. The Rust workspace provides an engine with PTY-backed sessions and a standalone daemon serving a Unix local API. A SwiftUI macOS prototype now renders two live terminal panes from that API. Persistence, ordered replay, and the Windows local transport have not been implemented yet.
 
 The first milestone is one project with two live agent sessions, reliable terminal input and resizing, and reconnecting the UI without restarting agents.
 
@@ -75,7 +75,18 @@ send({"type": "request", "request_id": 1, "command": {"command": "list_sessions"
 print(receive())
 ```
 
-## Build and run
+## macOS prototype
+
+A SwiftUI frontend lives in `apps/macos`. It connects to the daemon, shows one project with two live terminal panes, and reads git status for a context panel. Requirements, shortcuts, limitations, and recorded verification are in [`apps/macos/README.md`](apps/macos/README.md). The frontend decision is recorded in [`docs/decisions/0001-macos-frontend.md`](docs/decisions/0001-macos-frontend.md).
+
+```sh
+apps/macos/scripts/build.sh
+apps/macos/scripts/demo.sh
+```
+
+`demo.sh` builds the app, starts a daemon on `~/.director/daemon.sock` if needed, and opens Director with two agent sessions. The app needs macOS 14+ and Xcode 16+; SwiftTerm 1.99.1 is resolved by Swift Package Manager.
+
+## Build and run the daemon
 
 Install a Rust toolchain with Cargo, rustfmt, and Clippy. Rust/Cargo 1.98.0 from Homebrew was used to validate this workspace on Apple Silicon macOS. Edition 2024 requires Rust 1.85 or newer; a minimum supported version for all dependencies has not been established. Rustup is optional; Homebrew's toolchain works directly.
 
