@@ -1,11 +1,19 @@
 mod signals;
 
-use std::{env, process::ExitCode, time::Duration};
+#[cfg(unix)]
+mod api;
+#[cfg(unix)]
+mod config;
 
+use std::{env, process::ExitCode, sync::Arc, time::Duration};
+
+#[cfg(unix)]
+use anyhow::anyhow;
 use anyhow::{Context, Result};
 use director_engine::{Engine, EngineState};
 use director_protocol::{DaemonState, PROTOCOL_VERSION};
 use signals::ShutdownSignals;
+use tokio::sync::Mutex;
 use tracing::{error, info, level_filters::LevelFilter};
 use tracing_subscriber::EnvFilter;
 
@@ -28,28 +36,91 @@ async fn run() -> Result<()> {
 
     // Register handlers before readiness can be observed by another process.
     let mut signals = ShutdownSignals::register()?;
-    let mut engine = Engine::start();
-    info!(
-        event = "ready",
-        version = env!("CARGO_PKG_VERSION"),
-        protocol_version = PROTOCOL_VERSION,
-        pid = std::process::id(),
-        state = daemon_state(engine.state()).as_str(),
-    );
+    let engine = Arc::new(Mutex::new(Engine::start()));
 
-    let signal = signals.wait().await;
-    info!(
-        event = "shutdown_requested",
-        reason = signal.as_ref().copied().unwrap_or("signal_error"),
-    );
-    tokio::time::timeout(SHUTDOWN_TIMEOUT, engine.shutdown())
+    #[cfg(unix)]
+    {
+        let config = config::Config::load()?;
+        let mut api = api::ApiServer::bind(
+            &config.socket_path,
+            config.private_parent,
+            Arc::clone(&engine),
+        )
+        .await?;
+        info!(
+            event = "ready",
+            version = env!("CARGO_PKG_VERSION"),
+            protocol_version = PROTOCOL_VERSION,
+            pid = std::process::id(),
+            state = daemon_state(engine.lock().await.state()).as_str(),
+            socket = %api.socket_path().display(),
+        );
+
+        enum Stop {
+            Signal(Result<&'static str>),
+            Api(anyhow::Error),
+        }
+
+        let stop = tokio::select! {
+            signal = signals.wait() => Stop::Signal(signal),
+            result = api.run() => Stop::Api(
+                result.err().unwrap_or_else(|| anyhow!("local API accept loop stopped")),
+            ),
+        };
+        let reason = match &stop {
+            Stop::Signal(Ok(reason)) => *reason,
+            Stop::Signal(Err(_)) => "signal_error",
+            Stop::Api(_) => "api_error",
+        };
+        info!(event = "shutdown_requested", reason);
+
+        tokio::time::timeout(SHUTDOWN_TIMEOUT, async {
+            tokio::join!(api.shutdown(), async {
+                engine.lock().await.shutdown().await;
+            });
+        })
         .await
-        .context("engine shutdown exceeded the five-second deadline")?;
-    info!(
-        event = "stopped",
-        state = daemon_state(engine.state()).as_str(),
-    );
-    signal?;
+        .context("daemon shutdown exceeded the five-second deadline")?;
+
+        let state = engine.lock().await.state();
+        info!(event = "stopped", state = daemon_state(state).as_str());
+
+        match stop {
+            Stop::Signal(result) => {
+                result?;
+            }
+            Stop::Api(error) => return Err(error),
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        info!(
+            event = "ready",
+            version = env!("CARGO_PKG_VERSION"),
+            protocol_version = PROTOCOL_VERSION,
+            pid = std::process::id(),
+            state = daemon_state(engine.lock().await.state()).as_str(),
+            api = "unavailable",
+        );
+
+        let signal = signals.wait().await;
+        info!(
+            event = "shutdown_requested",
+            reason = signal.as_ref().copied().unwrap_or("signal_error"),
+        );
+        tokio::time::timeout(SHUTDOWN_TIMEOUT, async {
+            engine.lock().await.shutdown().await;
+        })
+        .await
+        .context("daemon shutdown exceeded the five-second deadline")?;
+        info!(
+            event = "stopped",
+            state = daemon_state(engine.lock().await.state()).as_str(),
+        );
+        signal?;
+    }
+
     Ok(())
 }
 
