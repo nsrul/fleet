@@ -86,6 +86,22 @@ apps/macos/scripts/demo.sh
 
 `demo.sh` builds the app, starts a daemon on `~/.director/daemon.sock` if needed, and opens Director with two agent sessions. The app needs macOS 14+ and Xcode 16+; SwiftTerm 1.99.1 is resolved by Swift Package Manager.
 
+## Development scripts
+
+Root-level scripts cover the common development flows:
+
+```sh
+scripts/dev.sh      # build and launch Director
+scripts/build.sh    # build the daemon and app
+scripts/demo.sh     # two live agent panes
+scripts/test.sh     # Rust workspace and DirectorKit tests
+scripts/verify.sh   # formatting, Clippy, tests, smoke checks, app build
+scripts/clean.sh    # remove build artifacts
+```
+
+See [`scripts/README.md`](scripts/README.md) for details and environment
+variables.
+
 ## Build and run the daemon
 
 Install a Rust toolchain with Cargo, rustfmt, and Clippy. Rust/Cargo 1.98.0 from Homebrew was used to validate this workspace on Apple Silicon macOS. Edition 2024 requires Rust 1.85 or newer; a minimum supported version for all dependencies has not been established. Rustup is optional; Homebrew's toolchain works directly.
