@@ -1,0 +1,78 @@
+name: Director
+options:
+  bundleIdPrefix: dev.director
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_APP_SANDBOX: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+packages:
+  DirectorKit:
+    path: DirectorKit
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: 1.99.1
+
+targets:
+  Director:
+    type: application
+    platform: macOS
+    sources:
+      - path: Director
+        excludes:
+          - "Info.plist"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.director.macos
+        PRODUCT_NAME: Director
+        INFOPLIST_FILE: Director/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        COMBINE_HIDPI_IMAGES: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+    dependencies:
+      - package: DirectorKit
+        product: DirectorAPI
+      - package: SwiftTerm
+        product: SwiftTerm
+    postBuildScripts:
+      - name: Copy director-daemon
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          SRC="${SRCROOT}/../../target/release/director-daemon"
+          if [ ! -x "$SRC" ]; then
+            SRC="${SRCROOT}/../../target/debug/director-daemon"
+          fi
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          mkdir -p "$DEST"
+          if [ -x "$SRC" ]; then
+            cp "$SRC" "$DEST/director-daemon"
+            chmod +x "$DEST/director-daemon"
+            echo "Copied director-daemon from $SRC"
+          else
+            echo "warning: director-daemon is not built; the app will search target/debug and PATH"
+          fi
+
+schemes:
+  Director:
+    build:
+      targets:
+        Director: all
+    run:
+      config: Debug
+    test:
+      config: Debug
