@@ -14,11 +14,6 @@ struct ContextPanelView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.contextBackground)
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(Color.primary.opacity(0.12))
-                .frame(width: 1)
-        }
     }
 
     private var session: SessionInfo? { model.contextSession }
@@ -29,12 +24,9 @@ struct ContextPanelView: View {
     private var header: some View {
         if hasChanges {
             tabs
-            HorizontalDivider(color: Color.primary.opacity(0.07))
             summaryBlock
-            HorizontalDivider(color: Color.primary.opacity(0.07))
         } else {
             simpleHeader
-            HorizontalDivider(color: Color.primary.opacity(0.07))
         }
     }
 
@@ -44,8 +36,8 @@ struct ContextPanelView: View {
             tab(title: "Artifacts", count: 0, selected: false)
             Spacer()
         }
-        .padding(.horizontal, 14)
-        .frame(height: 56)
+        .padding(.horizontal, 20)
+        .frame(height: WorkspaceChrome.barHeight)
     }
 
     private func tab(title: String, count: Int, selected: Bool) -> some View {
@@ -83,7 +75,7 @@ struct ContextPanelView: View {
                 .lineLimit(1)
         }
         .padding(.horizontal, 20)
-        .frame(height: 60)
+        .frame(height: WorkspaceChrome.barHeight)
     }
 
     private var summaryBlock: some View {
@@ -240,7 +232,6 @@ struct ContextPanelView: View {
 
     private var footer: some View {
         VStack(spacing: 0) {
-            HorizontalDivider(color: Color.primary.opacity(0.07))
             HStack(spacing: 12) {
                 Button("Link issue") {
                     if let url = issueURL {

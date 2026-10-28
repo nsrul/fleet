@@ -89,11 +89,9 @@ struct ConnectionView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Palette.error)
-                    Text(failure)
-                        .font(Typography.captionRegular)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 1)
+                        .accessibilityHidden(true)
+                    NoticeCopy(notice: failure, selectable: true)
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -148,7 +146,7 @@ struct ConnectionView: View {
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            Text("No director-daemon binary found. Build it with `cargo build -p director-daemon` or set DIRECTOR_DAEMON.")
+            Text(AgentNotices.daemonBinaryMissing().paragraph)
                 .font(Typography.captionRegular)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)

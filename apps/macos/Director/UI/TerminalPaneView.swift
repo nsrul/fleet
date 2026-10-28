@@ -17,30 +17,50 @@ struct TerminalPaneView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .topLeading) {
-            if showsSidebarToggle {
-                PanelToggleButton(
-                    systemImage: "sidebar.left",
-                    help: model.showSidebar ? "Hide sidebar" : "Show sidebar",
-                    isOn: model.showSidebar,
-                    action: model.toggleSidebar
-                )
-                .padding(.leading, model.showSidebar ? 14 : 78)
-                .padding(.top, 18)
+            if showsSidebarToggle, model.session(for: slot) == nil {
+                sidebarToggleButton
+                    .padding(.leading, sidebarToggleLeading)
+                    .padding(.top, WorkspaceChrome.controlTopInset)
             }
         }
         .overlay(alignment: .topTrailing) {
-            if showsContextToggle {
-                PanelToggleButton(
-                    systemImage: "sidebar.right",
-                    help: model.showContext ? "Hide context panel" : "Show context panel",
-                    isOn: model.showContext,
-                    action: model.toggleContext
-                )
-                .padding(.trailing, 16)
-                .padding(.top, 18)
+            if showsContextToggle, model.session(for: slot) == nil {
+                contextToggleButton
+                    .padding(.trailing, WorkspaceChrome.trailingInset)
+                    .padding(.top, WorkspaceChrome.controlTopInset)
             }
         }
         .ignoresSafeArea(edges: .top)
+    }
+
+    private var sidebarToggleLeading: CGFloat {
+        model.showSidebar ? 14 : 78
+    }
+
+    private var headerLeading: CGFloat {
+        showsSidebarToggle ? sidebarToggleLeading : 24
+    }
+
+    private var headerTrailing: CGFloat {
+        showsContextToggle ? WorkspaceChrome.trailingInset : 24
+    }
+
+    private var sidebarToggleButton: some View {
+        PanelToggleButton(
+            systemImage: "sidebar.left",
+            help: model.showSidebar ? "Hide sidebar" : "Show sidebar",
+            isOn: model.showSidebar,
+            action: model.toggleSidebar
+        )
+    }
+
+    private var contextToggleButton: some View {
+        PanelToggleButton(
+            systemImage: "sidebar.right",
+            help: model.showContext ? "Hide context panel" : "Show context panel",
+            isOn: model.showContext,
+            action: model.toggleContext
+        )
     }
 
     private func pane(_ session: SessionInfo) -> some View {
@@ -69,33 +89,31 @@ struct TerminalPaneView: View {
 
     private func header(_ session: SessionInfo) -> some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.paneTitle(for: session))
-                    .font(Typography.headline)
-                    .foregroundStyle(Palette.terminalTitle)
-                    .lineLimit(1)
-                Text(model.subtitle(for: session))
-                    .font(Typography.captionRegular)
-                    .foregroundStyle(Palette.terminalSecondary)
-                    .lineLimit(1)
+            if showsSidebarToggle {
+                sidebarToggleButton
             }
 
-            Spacer(minLength: 12)
+            Text(model.paneTitle(for: session))
+                .font(Typography.headline)
+                .foregroundStyle(Palette.terminalTitle)
+                .lineLimit(1)
+                .layoutPriority(1)
+
+            Spacer(minLength: 8)
 
             Button("Fork") {
                 model.forkSession(session.id)
             }
             .buttonStyle(TerminalHeaderButtonStyle())
             .help("Start a new process-level session with the same program and directory")
+
+            if showsContextToggle {
+                contextToggleButton
+            }
         }
-        .padding(.leading, showsSidebarToggle ? (model.showSidebar ? 48 : 112) : 24)
-        .padding(.trailing, showsContextToggle ? 52 : 24)
-        .frame(height: 60)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Palette.terminalDivider)
-                .frame(height: 1)
-        }
+        .padding(.leading, headerLeading)
+        .padding(.trailing, headerTrailing)
+        .frame(height: WorkspaceChrome.barHeight)
         .contentShape(Rectangle())
         .onTapGesture {
             model.focusedPane = slot

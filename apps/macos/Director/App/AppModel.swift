@@ -8,7 +8,7 @@ enum ConnectionState: Equatable {
     case idle
     case connecting
     case connected(Welcome)
-    case failed(String)
+    case failed(UserNotice)
 
     var isConnected: Bool {
         if case .connected = self { return true }
@@ -20,8 +20,8 @@ enum ConnectionState: Equatable {
         return false
     }
 
-    var failure: String? {
-        if case .failed(let message) = self { return message }
+    var failure: UserNotice? {
+        if case .failed(let notice) = self { return notice }
         return nil
     }
 }
@@ -121,11 +121,14 @@ final class AppModel {
     private(set) var attentionSessionIDs: Set<String> = []
     var showNewAgent = false
     var pendingStopID: String?
-    var pendingDeleteIDs: [String] = []
-    var errorMessage: String?
+    var errorNotice: UserNotice?
     var isStartingDaemon = false
     var gitSnapshots: [String: GitSnapshot] = [:]
     var terminalFontSize: Double = 16
+    /// Names shown for sessions. The daemon keeps the id; this is the label.
+    var sessionNames: [String: String] = [:] {
+        didSet { UserDefaults.standard.set(sessionNames, forKey: Self.sessionNamesKey) }
+    }
 
     var socketPath: String
     var autoStartDaemon: Bool {
@@ -139,6 +142,10 @@ final class AppModel {
     @ObservationIgnored private var gitTask: Task<Void, Never>?
     @ObservationIgnored private var inputPumpTask: Task<Void, Never>?
     @ObservationIgnored private var inputBuffers: [String: Data] = [:]
+    /// Sessions whose input the daemon has already rejected as closed or missing.
+    @ObservationIgnored private var inputMutedSessionIDs: Set<String> = []
+    /// Set when the socket itself fails, so later keystrokes do not repeat the toast.
+    @ObservationIgnored private var inputSuspended = false
     @ObservationIgnored private var resizeBuffers: [String: TerminalSize] = [:]
     @ObservationIgnored private var resizeTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var controllers: [String: TerminalController] = [:]
@@ -151,6 +158,7 @@ final class AppModel {
     private static let fontSizeKey = "director.terminalFontSize"
     private static let showSidebarKey = "director.showSidebar"
     private static let showContextKey = "director.showContext"
+    private static let sessionNamesKey = "director.sessionNames"
 
     init() {
         let defaults = UserDefaults.standard
@@ -163,6 +171,7 @@ final class AppModel {
         terminalFontSize = defaults.object(forKey: Self.fontSizeKey) as? Double ?? 16
         showSidebar = defaults.object(forKey: Self.showSidebarKey) as? Bool ?? true
         showContext = defaults.object(forKey: Self.showContextKey) as? Bool ?? true
+        sessionNames = defaults.dictionary(forKey: Self.sessionNamesKey) as? [String: String] ?? [:]
     }
 
     // MARK: - Derived state
@@ -223,15 +232,15 @@ final class AppModel {
         return welcome.capabilities.contains("remove_session")
     }
 
-    var deletePromptTitle: String {
-        if pendingDeleteIDs.count == 1, let session = session(id: pendingDeleteIDs[0]) {
+    func deletePromptTitle(for ids: [String]) -> String {
+        if ids.count == 1, let session = session(id: ids[0]) {
             return "Delete “\(displayTitle(for: session))”?"
         }
-        return "Delete \(pendingDeleteIDs.count) agents?"
+        return "Delete \(ids.count) agents?"
     }
 
-    var deletePromptMessage: String {
-        let selected = pendingDeleteIDs.compactMap { session(id: $0) }
+    func deletePromptMessage(for ids: [String]) -> String {
+        let selected = ids.compactMap { session(id: $0) }
         let running = selected.filter(\.isRunning).count
         if selected.count == 1 {
             return running == 1
@@ -289,8 +298,25 @@ final class AppModel {
     }
 
     func displayTitle(for session: SessionInfo) -> String {
-        let words = session.id.split(separator: "-").map(String.init)
-        guard !words.isEmpty else { return session.id }
+        if let name = sessionNames[session.id]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !name.isEmpty {
+            return name
+        }
+        return Self.displayTitle(forSessionID: session.id)
+    }
+
+    func setSessionName(_ sessionID: String, _ name: String) {
+        guard session(id: sessionID) != nil else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let limited = String(trimmed.prefix(80))
+        guard sessionNames[sessionID] != limited else { return }
+        sessionNames[sessionID] = limited
+    }
+
+    static func displayTitle(forSessionID id: String) -> String {
+        let words = id.split(separator: "-").map(String.init)
+        guard !words.isEmpty else { return id }
         return words
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }
             .joined(separator: " ")
@@ -298,18 +324,6 @@ final class AppModel {
 
     func paneTitle(for session: SessionInfo) -> String {
         displayTitle(for: session)
-    }
-
-    func subtitle(for session: SessionInfo) -> String {
-        let project = (session.cwd as NSString).lastPathComponent
-        let agent = AgentCatalog.displayName(for: session.program)
-        let branch = gitSnapshots[session.cwd]?.branch
-        return [project, agent, branch]
-            .compactMap { value -> String? in
-                guard let value, !value.isEmpty else { return nil }
-                return value
-            }
-            .joined(separator: " · ")
     }
 
     func statusLabel(for session: SessionInfo) -> String {
@@ -328,12 +342,7 @@ final class AppModel {
     }
 
     func abbreviate(_ path: String) -> String {
-        let home = NSHomeDirectory()
-        if path == home { return "~" }
-        if path.hasPrefix(home + "/") {
-            return "~" + path.dropFirst(home.count)
-        }
-        return path
+        AgentNotices.displayPath(path)
     }
 
     // MARK: - Lifecycle
@@ -350,7 +359,7 @@ final class AppModel {
     private func connect(allowAutoStart: Bool) async {
         guard !connection.isConnected, !connection.isConnecting else { return }
         connection = .connecting
-        errorMessage = nil
+        errorNotice = nil
 
         do {
             try await openConnection()
@@ -362,12 +371,12 @@ final class AppModel {
                     try await DaemonLauncher.start(executable: executable, socketPath: socketPath)
                     try await openConnection()
                 } catch {
-                    connection = .failed(friendly(error))
+                    connection = .failed(AgentNotices.explainConnection(error, socketPath: socketPath))
                 }
                 isStartingDaemon = false
                 return
             }
-            connection = .failed(friendly(error))
+            connection = .failed(AgentNotices.explainConnection(error, socketPath: socketPath))
         }
     }
 
@@ -376,6 +385,7 @@ final class AppModel {
         do {
             let welcome = try await client.connect(clientName: "director-macos")
             self.client = client
+            inputSuspended = false
             connection = .connected(welcome)
             attachedSessionIDs.removeAll()
             attachingSessionIDs.removeAll()
@@ -407,7 +417,7 @@ final class AppModel {
 
     func startDaemonManually() async {
         guard let executable = DaemonLauncher.locate() else {
-            showError("No director-daemon binary was found. Build it with `cargo build -p director-daemon` or set DIRECTOR_DAEMON.")
+            showNotice(AgentNotices.daemonBinaryMissing())
             return
         }
         isStartingDaemon = true
@@ -416,7 +426,7 @@ final class AppModel {
             try await DaemonLauncher.start(executable: executable, socketPath: socketPath)
             await connect(allowAutoStart: false)
         } catch {
-            connection = .failed(friendly(error))
+            connection = .failed(AgentNotices.explainConnection(error, socketPath: socketPath))
         }
     }
 
@@ -432,6 +442,8 @@ final class AppModel {
         inputPumpTask?.cancel()
         inputPumpTask = nil
         inputBuffers.removeAll()
+        inputMutedSessionIDs.removeAll()
+        inputSuspended = false
         activeSessionIDs.removeAll()
         attentionSessionIDs.removeAll()
         resizeTasks.values.forEach { $0.cancel() }
@@ -467,7 +479,7 @@ final class AppModel {
         guard connection.isConnected else { return }
         gitTask?.cancel()
         gitTask = nil
-        connection = .failed("The daemon closed the connection.")
+        connection = .failed(AgentNotices.daemonClosedConnection())
     }
 
     private func handle(_ event: ClientEvent) {
@@ -477,7 +489,7 @@ final class AppModel {
         case .status(let sessionID, let status):
             updateStatus(status, for: sessionID)
         case .daemonStopping:
-            connection = .failed("The daemon is shutting down.")
+            connection = .failed(AgentNotices.daemonShuttingDown())
         }
     }
 
@@ -509,6 +521,8 @@ final class AppModel {
         let list = try await client.listSessions()
         sessions = list.sorted(by: sessionSort)
         let ids = Set(sessions.map(\.id))
+        pruneSessionNames(keeping: ids)
+        inputMutedSessionIDs.subtract(sessions.filter(\.isRunning).map(\.id))
         activeSessionIDs.formIntersection(ids)
         attentionSessionIDs.formIntersection(ids)
         reconcilePanes()
@@ -537,6 +551,11 @@ final class AppModel {
                 $0.id != primarySessionID
             })?.id
         }
+    }
+
+    private func pruneSessionNames(keeping ids: Set<String>) {
+        guard sessionNames.contains(where: { !ids.contains($0.key) }) else { return }
+        sessionNames = sessionNames.filter { ids.contains($0.key) }
     }
 
     private func sessionSort(_ lhs: SessionInfo, _ rhs: SessionInfo) -> Bool {
@@ -631,20 +650,24 @@ final class AppModel {
         guard !ids.isEmpty else { return }
         Task {
             guard let client else {
-                showError("Not connected to the daemon.")
+                showNotice(AgentNotices.notConnected())
                 return
             }
-            var firstError: Error?
+            var failures: [(id: String, error: Error)] = []
             for id in ids {
                 do {
                     _ = try await client.stopSession(id: id)
                 } catch {
-                    firstError = firstError ?? error
+                    failures.append((id, error))
                 }
             }
-            if let firstError {
-                let label = ids.count == 1 ? ids[0] : "\(ids.count) agents"
-                showError("Could not stop \(label): \(friendly(firstError))")
+            if let first = failures.first {
+                showFailure(
+                    first.error,
+                    action: .stop,
+                    sessionID: first.id,
+                    extraCount: failures.count - 1
+                )
             }
             try? await reloadSessions()
             await attachVisiblePanes()
@@ -653,46 +676,65 @@ final class AppModel {
 
     func requestDelete(_ sessionIDs: [String]) {
         guard connection.isConnected else {
-            showError("Not connected to the daemon.")
+            showNotice(AgentNotices.notConnected())
             return
         }
         guard canRemoveSessions else {
-            showError("Restart the daemon to enable deleting agents.")
+            showNotice(AgentNotices.deleteNeedsNewerDaemon())
             return
         }
         let existing = Set(sessions.map(\.id))
         let ids = sessionIDs.filter { existing.contains($0) }
         guard !ids.isEmpty else { return }
-        pendingDeleteIDs = ids
+        let title = deletePromptTitle(for: ids)
+        let message = deletePromptMessage(for: ids)
+        // Present on the next turn. A context menu or row button is still
+        // dismissing on this turn, and that swallows an alert shown immediately.
+        Task { @MainActor in
+            await nextMainTurn()
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = title
+            alert.informativeText = message
+            alert.addButton(withTitle: "Delete")
+            alert.addButton(withTitle: "Cancel")
+            alert.buttons.first?.hasDestructiveAction = true
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            await deleteSessions(ids)
+        }
     }
 
-    func cancelDelete() {
-        pendingDeleteIDs = []
+    func requestDeleteFocused() {
+        if let id = focusedSession?.id {
+            requestDelete([id])
+        }
     }
 
-    func deletePendingSessions() {
-        let ids = pendingDeleteIDs
-        pendingDeleteIDs = []
-        guard !ids.isEmpty else { return }
-        Task { await deleteSessions(ids) }
+    private func nextMainTurn() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
     }
 
     private func deleteSessions(_ sessionIDs: [String]) async {
         guard let client else {
-            showError("Not connected to the daemon.")
+            showNotice(AgentNotices.notConnected())
             return
         }
 
-        var firstError: Error?
+        var stopFailure: (id: String, error: Error)?
         for id in sessionIDs where session(id: id)?.isRunning == true {
             do {
                 _ = try await client.stopSession(id: id)
             } catch {
-                firstError = firstError ?? error
+                if stopFailure == nil { stopFailure = (id, error) }
             }
         }
 
         var removedIDs: Set<String> = []
+        var removeFailure: (id: String, error: Error)?
         for id in sessionIDs {
             if attachedSessionIDs.contains(id) {
                 try? await client.detachSession(id: id)
@@ -702,8 +744,13 @@ final class AppModel {
                 try await client.removeSession(id: id)
                 removedIDs.insert(id)
             } catch {
-                firstError = firstError ?? error
+                if removeFailure == nil { removeFailure = (id, error) }
             }
+        }
+
+        if !removedIDs.isEmpty {
+            sessions.removeAll { removedIDs.contains($0.id) }
+            reconcilePanes()
         }
 
         try? await reloadSessions()
@@ -715,9 +762,14 @@ final class AppModel {
             controllers.removeValue(forKey: id)
         }
 
-        if let firstError {
-            let label = sessionIDs.count == 1 ? sessionIDs[0] : "\(sessionIDs.count) agents"
-            showError("Could not delete \(label): \(friendly(firstError))")
+        let failedCount = sessionIDs.count - removedIDs.count
+        if failedCount > 0, let failure = removeFailure ?? stopFailure {
+            showFailure(
+                failure.error,
+                action: .delete,
+                sessionID: failure.id,
+                extraCount: failedCount - 1
+            )
         }
     }
 
@@ -732,7 +784,7 @@ final class AppModel {
                     requestedName: "\(session.id)-fork"
                 )
             } catch {
-                showError("Could not fork \(session.id): \(friendly(error))")
+                showNotice(notice(for: error, action: .fork, sessionID: session.id))
             }
         }
     }
@@ -748,9 +800,10 @@ final class AppModel {
             throw DirectorError.daemonUnavailable("Not connected to the daemon.")
         }
 
-        let name = requestedName.isEmpty
+        let trimmedName = requestedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmedName.isEmpty
             ? (program as NSString).lastPathComponent
-            : requestedName
+            : trimmedName
         let id = uniqueSessionID(name)
         let spec = CreateSession(
             id: id,
@@ -764,6 +817,9 @@ final class AppModel {
             size: TerminalSize(rows: 24, cols: 80)
         )
         let session = try await client.createSession(spec)
+        if !trimmedName.isEmpty, trimmedName != Self.slug(trimmedName) {
+            sessionNames[session.id] = String(trimmedName.prefix(80))
+        }
         sessions.append(session)
         sessions.sort(by: sessionSort)
 
@@ -780,7 +836,7 @@ final class AppModel {
         return session
     }
 
-    private func uniqueSessionID(_ raw: String) -> String {
+    private static func slug(_ raw: String) -> String {
         let mapped = raw
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
@@ -797,6 +853,11 @@ final class AppModel {
         base = base.trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
         if base.isEmpty { base = "agent" }
         if base.count > 64 { base = String(base.prefix(64)) }
+        return base
+    }
+
+    private func uniqueSessionID(_ raw: String) -> String {
+        let base = Self.slug(raw)
 
         let used = Set(sessions.map(\.id))
         if !used.contains(base) { return base }
@@ -875,12 +936,13 @@ final class AppModel {
                 attachedSessionIDs.insert(sessionID)
                 return
             }
-            showError("Could not attach to \(sessionID): \(friendly(error))")
+            showNotice(notice(for: error, action: .attach, sessionID: sessionID))
         }
     }
 
     private func enqueueInput(_ data: Data, for sessionID: String) {
         guard !data.isEmpty else { return }
+        if inputSuspended || inputMutedSessionIDs.contains(sessionID) { return }
         inputBuffers[sessionID, default: Data()].append(data)
         guard inputPumpTask == nil else { return }
 
@@ -890,12 +952,16 @@ final class AppModel {
             while !self.inputBuffers.isEmpty {
                 let batches = self.inputBuffers
                 self.inputBuffers.removeAll()
-                guard let client = self.client else { break }
+                guard let client = self.client else {
+                    self.suspendInput(AgentNotices.notConnected())
+                    break
+                }
                 for (id, data) in batches {
                     do {
                         try await client.input(id: id, data: data)
                     } catch {
-                        self.showError("Could not send input to \(id): \(self.friendly(error))")
+                        self.reportInputFailure(error, sessionID: id)
+                        if self.inputSuspended { break }
                     }
                 }
                 if !self.inputBuffers.isEmpty {
@@ -991,26 +1057,93 @@ final class AppModel {
 
     // MARK: - Errors
 
-    func showError(_ message: String) {
-        errorMessage = message
+    func showNotice(_ notice: UserNotice) {
+        guard errorNotice != notice else { return }
+        errorNotice = notice
         let token = UUID()
         errorToken = token
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(8))
+            try? await Task.sleep(for: .seconds(10))
             guard let self, self.errorToken == token else { return }
-            self.errorMessage = nil
+            self.errorNotice = nil
         }
     }
 
     func clearError() {
-        errorMessage = nil
+        errorNotice = nil
     }
 
-    private func friendly(_ error: Error) -> String {
-        if let localized = error as? LocalizedError, let description = localized.errorDescription {
-            return description
+    private func showFailure(
+        _ error: Error,
+        action: AgentAction,
+        sessionID: String,
+        extraCount: Int
+    ) {
+        var notice = notice(for: error, action: action, sessionID: sessionID)
+        if extraCount > 0 {
+            let extra = extraCount == 1
+                ? "1 other agent also failed."
+                : "\(extraCount) other agents also failed."
+            notice.detail = notice.detail.isEmpty ? extra : "\(notice.detail) \(extra)"
         }
-        return error.localizedDescription
+        showNotice(notice)
+    }
+
+    private func notice(for error: Error, action: AgentAction, sessionID: String) -> UserNotice {
+        AgentNotices.explain(
+            error,
+            action: action,
+            agent: agentName(for: sessionID),
+            exit: exitStatus(for: sessionID)
+        )
+    }
+
+    private func agentName(for sessionID: String) -> String {
+        let title = session(id: sessionID).map(displayTitle(for:))
+            ?? Self.displayTitle(forSessionID: sessionID)
+        return title.isEmpty ? "The agent" : title
+    }
+
+    private func exitStatus(for sessionID: String) -> SessionExit? {
+        guard let session = session(id: sessionID), case .exited(let exit) = session.status else {
+            return nil
+        }
+        return exit
+    }
+
+    private func suspendInput(_ notice: UserNotice) {
+        inputBuffers.removeAll()
+        guard !inputSuspended else { return }
+        inputSuspended = true
+        showNotice(notice)
+    }
+
+    private func reportInputFailure(_ error: Error, sessionID: String) {
+        if AgentNotices.isTransport(error) {
+            suspendInput(AgentNotices.explain(
+                error,
+                action: .sendInput,
+                agent: agentName(for: sessionID),
+                exit: nil
+            ))
+            return
+        }
+        let code = AgentNotices.code(of: error)
+        if code == "session_closed" || code == "session_not_found" {
+            inputBuffers[sessionID] = nil
+            guard inputMutedSessionIDs.insert(sessionID).inserted else { return }
+            showNotice(notice(for: error, action: .sendInput, sessionID: sessionID))
+            let id = sessionID
+            Task { [weak self] in
+                guard let self else { return }
+                try? await self.reloadSessions()
+                if let session = self.session(id: id) {
+                    self.controllers[id]?.update(status: session.status)
+                }
+            }
+            return
+        }
+        showNotice(notice(for: error, action: .sendInput, sessionID: sessionID))
     }
 
     private func isConnectionFailure(_ error: Error) -> Bool {
