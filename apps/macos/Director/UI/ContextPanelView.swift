@@ -12,7 +12,7 @@ struct ContextPanelView: View {
             content
             footer
         }
-        .frame(width: 504)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.contextBackground)
         .overlay(alignment: .leading) {
             Rectangle()

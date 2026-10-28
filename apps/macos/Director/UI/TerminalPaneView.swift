@@ -4,6 +4,8 @@ import SwiftUI
 struct TerminalPaneView: View {
     @Bindable var model: AppModel
     let slot: PaneSlot
+    var showsSidebarToggle = false
+    var showsContextToggle = false
 
     var body: some View {
         Group {
@@ -14,6 +16,31 @@ struct TerminalPaneView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topLeading) {
+            if showsSidebarToggle {
+                PanelToggleButton(
+                    systemImage: "sidebar.left",
+                    help: model.showSidebar ? "Hide sidebar" : "Show sidebar",
+                    isOn: model.showSidebar,
+                    action: model.toggleSidebar
+                )
+                .padding(.leading, model.showSidebar ? 14 : 78)
+                .padding(.top, 18)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if showsContextToggle {
+                PanelToggleButton(
+                    systemImage: "sidebar.right",
+                    help: model.showContext ? "Hide context panel" : "Show context panel",
+                    isOn: model.showContext,
+                    action: model.toggleContext
+                )
+                .padding(.trailing, 16)
+                .padding(.top, 18)
+            }
+        }
+        .ignoresSafeArea(edges: .top)
     }
 
     private func pane(_ session: SessionInfo) -> some View {
@@ -26,16 +53,8 @@ struct TerminalPaneView: View {
                 .padding(.horizontal, 26)
                 .padding(.vertical, 16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            statusBar(session, controller: controller)
         }
         .background(Palette.terminal)
-        .overlay(alignment: .top) {
-            if model.isSplit, model.focusedPane == slot {
-                Rectangle()
-                    .fill(Palette.accent)
-                    .frame(height: 2)
-            }
-        }
         .onAppear {
             if model.focusedPane == slot {
                 controller.focus()
@@ -63,39 +82,14 @@ struct TerminalPaneView: View {
 
             Spacer(minLength: 12)
 
-            Menu {
-                Button(model.splitLayout == .stacked ? "✓ Stacked" : "Stacked") {
-                    model.setSplitLayout(.stacked)
-                    model.setSplit(true)
-                }
-                Button(model.splitLayout == .sideBySide ? "✓ Side by Side" : "Side by Side") {
-                    model.setSplitLayout(.sideBySide)
-                    model.setSplit(true)
-                }
-                Divider()
-                Button("Swap Panes") {
-                    model.swapPanes()
-                }
-                .disabled(model.primarySessionID == nil || model.secondarySessionID == nil)
-                Button("Unsplit") {
-                    model.setSplit(false)
-                }
-                .disabled(!model.isSplit)
-            } label: {
-                Text("Split")
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Change the pane layout")
-
             Button("Fork") {
                 model.forkSession(session.id)
             }
             .buttonStyle(TerminalHeaderButtonStyle())
             .help("Start a new process-level session with the same program and directory")
         }
-        .padding(.horizontal, 24)
+        .padding(.leading, showsSidebarToggle ? (model.showSidebar ? 48 : 112) : 24)
+        .padding(.trailing, showsContextToggle ? 52 : 24)
         .frame(height: 60)
         .overlay(alignment: .bottom) {
             Rectangle()
@@ -105,37 +99,6 @@ struct TerminalPaneView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             model.focusedPane = slot
-        }
-    }
-
-    private func statusBar(_ session: SessionInfo, controller: TerminalController) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(statusColor(session.status))
-                .frame(width: 5, height: 5)
-            Text(model.statusLabel(for: session))
-            if let size = controller.reportedSize {
-                Text("\(size.cols)×\(size.rows)")
-            }
-            Spacer(minLength: 8)
-            Text("⌘K clear · ⌘\\ split")
-        }
-        .font(.system(size: 10, design: .monospaced))
-        .foregroundStyle(Palette.terminalSecondary.opacity(0.75))
-        .padding(.horizontal, 14)
-        .frame(height: 22)
-        .background(Palette.terminalStatusBar)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Palette.terminalDivider)
-                .frame(height: 1)
-        }
-    }
-
-    private func statusColor(_ status: SessionStatus) -> Color {
-        switch status {
-        case .running: return Palette.accent
-        case .exited(let exit): return exit.success ? Palette.success : Palette.error
         }
     }
 }

@@ -51,13 +51,17 @@ enum SplitLayout: String, CaseIterable, Identifiable, Sendable {
 enum SessionFilter: String, CaseIterable, Identifiable, Sendable {
     case all
     case running
+    case idle
+    case needsYou
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .all: return "All agents"
+        case .all: return "All"
         case .running: return "Running"
+        case .idle: return "Idle"
+        case .needsYou: return "Needs you"
         }
     }
 }
@@ -102,16 +106,25 @@ final class AppModel {
     var primarySessionID: String?
     var secondarySessionID: String?
     var focusedPane: PaneSlot = .primary
-    var isSplit = true
+    var isSplit = false
     var splitLayout: SplitLayout = .stacked
-    var showContext = true
+    var showSidebar = true {
+        didSet { UserDefaults.standard.set(showSidebar, forKey: Self.showSidebarKey) }
+    }
+    var showContext = true {
+        didSet { UserDefaults.standard.set(showContext, forKey: Self.showContextKey) }
+    }
     var filter: SessionFilter = .all
+    /// Sessions that produced output in the last few seconds.
+    private(set) var activeSessionIDs: Set<String> = []
+    /// Sessions that rang the bell and have not been touched since.
+    private(set) var attentionSessionIDs: Set<String> = []
     var showNewAgent = false
     var pendingStopID: String?
     var errorMessage: String?
     var isStartingDaemon = false
     var gitSnapshots: [String: GitSnapshot] = [:]
-    var terminalFontSize: Double = 12
+    var terminalFontSize: Double = 16
 
     var socketPath: String
     var autoStartDaemon: Bool {
@@ -135,6 +148,8 @@ final class AppModel {
     private static let socketKey = "director.socketPath"
     private static let autoStartKey = "director.autoStartDaemon"
     private static let fontSizeKey = "director.terminalFontSize"
+    private static let showSidebarKey = "director.showSidebar"
+    private static let showContextKey = "director.showContext"
 
     init() {
         let defaults = UserDefaults.standard
@@ -144,7 +159,9 @@ final class AppModel {
             socketPath = defaults.string(forKey: Self.socketKey) ?? DirectorPaths.defaultSocketPath
         }
         autoStartDaemon = defaults.object(forKey: Self.autoStartKey) as? Bool ?? true
-        terminalFontSize = defaults.object(forKey: Self.fontSizeKey) as? Double ?? 12
+        terminalFontSize = defaults.object(forKey: Self.fontSizeKey) as? Double ?? 16
+        showSidebar = defaults.object(forKey: Self.showSidebarKey) as? Bool ?? true
+        showContext = defaults.object(forKey: Self.showContextKey) as? Bool ?? true
     }
 
     // MARK: - Derived state
@@ -157,9 +174,44 @@ final class AppModel {
     var secondarySession: SessionInfo? { session(for: .secondary) }
 
     var filteredSessions: [SessionInfo] {
+        sessions.filter { matches($0, filter: filter) }
+    }
+
+    func matches(_ session: SessionInfo, filter: SessionFilter) -> Bool {
+        let needsYou = needsAttention(session)
         switch filter {
-        case .all: return sessions
-        case .running: return sessions.filter(\.isRunning)
+        case .all:
+            return true
+        case .running:
+            return session.isRunning
+                && activeSessionIDs.contains(session.id)
+                && !needsYou
+        case .idle:
+            if needsYou { return false }
+            if session.isRunning { return !activeSessionIDs.contains(session.id) }
+            if case .exited(let exit) = session.status { return exit.success }
+            return false
+        case .needsYou:
+            return needsYou
+        }
+    }
+
+    private func needsAttention(_ session: SessionInfo) -> Bool {
+        if attentionSessionIDs.contains(session.id) { return true }
+        if case .exited(let exit) = session.status, !exit.success { return true }
+        return false
+    }
+
+    func noteSessionActivity(_ sessionID: String, active: Bool, needsAttention: Bool) {
+        if active {
+            activeSessionIDs.insert(sessionID)
+        } else {
+            activeSessionIDs.remove(sessionID)
+        }
+        if needsAttention {
+            attentionSessionIDs.insert(sessionID)
+        } else {
+            attentionSessionIDs.remove(sessionID)
         }
     }
 
@@ -353,6 +405,8 @@ final class AppModel {
         inputPumpTask?.cancel()
         inputPumpTask = nil
         inputBuffers.removeAll()
+        activeSessionIDs.removeAll()
+        attentionSessionIDs.removeAll()
         resizeTasks.values.forEach { $0.cancel() }
         resizeTasks.removeAll()
         resizeBuffers.removeAll()
@@ -427,6 +481,9 @@ final class AppModel {
         }
         let list = try await client.listSessions()
         sessions = list.sorted(by: sessionSort)
+        let ids = Set(sessions.map(\.id))
+        activeSessionIDs.formIntersection(ids)
+        attentionSessionIDs.formIntersection(ids)
         reconcilePanes()
     }
 
@@ -462,44 +519,19 @@ final class AppModel {
         return lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
     }
 
-    func selectSession(_ sessionID: String, in slot: PaneSlot? = nil) {
+    func selectSession(_ sessionID: String) {
         guard sessions.contains(where: { $0.id == sessionID }) else { return }
-        let target = slot ?? focusedPane
-        let oldPrimary = primarySessionID
-        let oldSecondary = secondarySessionID
-
-        switch target {
-        case .primary:
-            primarySessionID = sessionID
-            if oldSecondary == sessionID {
-                secondarySessionID = oldPrimary
-            }
-            focusedPane = .primary
-        case .secondary:
-            secondarySessionID = sessionID
-            if oldPrimary == sessionID {
-                primarySessionID = oldSecondary
-            }
-            isSplit = true
-            focusedPane = .secondary
-        }
-
-        if primarySessionID == nil {
-            primarySessionID = sessions.first(where: { $0.id != secondarySessionID })?.id
-        }
-        if primarySessionID == secondarySessionID {
+        primarySessionID = sessionID
+        if secondarySessionID == sessionID {
             secondarySessionID = nil
         }
+        focusedPane = .primary
+        isSplit = false
 
         Task {
             await attachIfNeeded(sessionID)
             await refreshGitForFocusedSession()
         }
-    }
-
-    func openInOtherPane(_ sessionID: String) {
-        let target: PaneSlot = focusedPane == .primary ? .secondary : .primary
-        selectSession(sessionID, in: target)
     }
 
     func focusPane(_ slot: PaneSlot) {
@@ -541,6 +573,10 @@ final class AppModel {
         if isSplit {
             showContext = layout == .stacked
         }
+    }
+
+    func toggleSidebar() {
+        showSidebar.toggle()
     }
 
     func toggleContext() {
@@ -616,14 +652,12 @@ final class AppModel {
         sessions.append(session)
         sessions.sort(by: sessionSort)
 
-        if primarySessionID == nil {
-            primarySessionID = session.id
-            focusedPane = .primary
-        } else {
-            secondarySessionID = session.id
-            isSplit = true
-            focusedPane = .secondary
+        primarySessionID = session.id
+        if secondarySessionID == session.id {
+            secondarySessionID = nil
         }
+        focusedPane = .primary
+        isSplit = false
 
         UserDefaults.standard.set(cwd, forKey: "director.lastWorkingDirectory")
         await attachIfNeeded(session.id)
@@ -678,6 +712,14 @@ final class AppModel {
                 self.focusedPane = slot
                 Task { await self.refreshGitForFocusedSession() }
             }
+        }
+        controller.onPresence = { [weak self, weak controller] in
+            guard let self, let controller else { return }
+            self.noteSessionActivity(
+                sessionID,
+                active: controller.recentlyActive,
+                needsAttention: controller.needsAttention
+            )
         }
         controllers[sessionID] = controller
         return controller

@@ -16,30 +16,53 @@ struct TerminalAreaView: View {
                 panes
             }
         }
-        .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topLeading) {
+            if showsChromeToggles {
+                sidebarToggle
+                    .padding(.leading, model.showSidebar ? 14 : 78)
+                    .padding(.top, 18)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if showsChromeToggles {
+                contextToggle
+                    .padding(.trailing, 16)
+                    .padding(.top, 18)
+            }
+        }
     }
 
-    @ViewBuilder
+    /// Session panes draw their own toggles. The connection and empty states do not.
+    private var showsChromeToggles: Bool {
+        !model.connection.isConnected || model.sessions.isEmpty
+    }
+
+    private var sidebarToggle: some View {
+        PanelToggleButton(
+            systemImage: "sidebar.left",
+            help: model.showSidebar ? "Hide sidebar" : "Show sidebar",
+            isOn: model.showSidebar,
+            action: model.toggleSidebar
+        )
+    }
+
+    private var contextToggle: some View {
+        PanelToggleButton(
+            systemImage: "sidebar.right",
+            help: model.showContext ? "Hide context panel" : "Show context panel",
+            isOn: model.showContext,
+            action: model.toggleContext
+        )
+    }
+
     private var panes: some View {
-        if model.isSplit {
-            if model.splitLayout == .stacked {
-                VSplitView {
-                    TerminalPaneView(model: model, slot: .primary)
-                        .frame(minHeight: 140)
-                    TerminalPaneView(model: model, slot: .secondary)
-                        .frame(minHeight: 140)
-                }
-            } else {
-                HSplitView {
-                    TerminalPaneView(model: model, slot: .primary)
-                        .frame(minWidth: 260)
-                    TerminalPaneView(model: model, slot: .secondary)
-                        .frame(minWidth: 260)
-                }
-            }
-        } else {
-            TerminalPaneView(model: model, slot: .primary)
-        }
+        TerminalPaneView(
+            model: model,
+            slot: .primary,
+            showsSidebarToggle: true,
+            showsContextToggle: true
+        )
     }
 }
 

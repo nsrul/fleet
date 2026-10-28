@@ -35,11 +35,17 @@ final class TerminalController: TerminalViewDelegate {
     var cwd: String?
     var status: SessionStatus = .running
     var reportedSize: TerminalSize?
+    /// True while output arrived in the last few seconds.
+    var recentlyActive = false
+    /// True after a bell, until the user types or focuses the pane.
+    var needsAttention = false
 
+    @ObservationIgnored var onPresence: (() -> Void)?
     @ObservationIgnored private var lastSize: TerminalSize?
     @ObservationIgnored private var fontSize: CGFloat
+    @ObservationIgnored private var activityToken = 0
 
-    init(sessionID: String, fontSize: CGFloat = 12) {
+    init(sessionID: String, fontSize: CGFloat = 16) {
         self.sessionID = sessionID
         self.fontSize = fontSize
 
@@ -93,6 +99,7 @@ final class TerminalController: TerminalViewDelegate {
     func feed(_ data: Data) {
         guard !data.isEmpty else { return }
         view.feed(byteArray: [UInt8](data)[...])
+        markRecentlyActive()
     }
 
     func reset() {
@@ -108,6 +115,7 @@ final class TerminalController: TerminalViewDelegate {
     }
 
     func focus() {
+        noteUserEngaged()
         if let window = view.window {
             window.makeFirstResponder(view)
             return
@@ -155,6 +163,7 @@ final class TerminalController: TerminalViewDelegate {
     }
 
     func send(source: TerminalView, data: ArraySlice<UInt8>) {
+        noteUserEngaged()
         onInput?(Data(data))
     }
 
@@ -171,7 +180,33 @@ final class TerminalController: TerminalViewDelegate {
     }
 
     func bell(source: TerminalView) {
+        if !needsAttention {
+            needsAttention = true
+            onPresence?()
+        }
         NSSound.beep()
+    }
+
+    private func markRecentlyActive() {
+        activityToken += 1
+        let token = activityToken
+        if !recentlyActive {
+            recentlyActive = true
+            onPresence?()
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, self.activityToken == token else { return }
+            guard self.recentlyActive else { return }
+            self.recentlyActive = false
+            self.onPresence?()
+        }
+    }
+
+    private func noteUserEngaged() {
+        guard needsAttention else { return }
+        needsAttention = false
+        onPresence?()
     }
 
     func clipboardCopy(source: TerminalView, content: Data) {
