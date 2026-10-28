@@ -313,3 +313,44 @@ async fn engine_shutdown_terminates_every_session() {
         .unwrap_err();
     assert!(matches!(error, EngineError::Stopped));
 }
+
+#[tokio::test]
+async fn exited_sessions_can_be_removed_and_their_ids_reused() {
+    let mut engine = Engine::start();
+    let handle = engine.spawn_session(command("remove", "exit 0")).unwrap();
+    assert!(wait_for_exit(&handle).await.success());
+    assert_eq!(engine.sessions().len(), 1);
+
+    let removed = engine.remove_session(&id("remove")).unwrap();
+    assert_eq!(removed.id, id("remove"));
+    assert!(engine.sessions().is_empty());
+
+    let missing = engine.remove_session(&id("remove")).unwrap_err();
+    assert!(matches!(
+        missing,
+        EngineError::Session(SessionError::SessionNotFound(_))
+    ));
+
+    let replacement = engine.spawn_session(command("remove", "sleep 30")).unwrap();
+    assert!(matches!(replacement.status(), SessionStatus::Running));
+    replacement.terminate().await.unwrap();
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn running_sessions_cannot_be_removed() {
+    let mut engine = Engine::start();
+    let handle = engine
+        .spawn_session(command("running", "sleep 30"))
+        .unwrap();
+
+    let error = engine.remove_session(&id("running")).unwrap_err();
+    assert!(matches!(
+        error,
+        EngineError::Session(SessionError::SessionRunning(_))
+    ));
+    assert_eq!(engine.sessions().len(), 1);
+
+    handle.terminate().await.unwrap();
+    engine.shutdown().await;
+}

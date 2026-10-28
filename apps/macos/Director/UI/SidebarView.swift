@@ -10,6 +10,8 @@ struct SidebarView: View {
     @State private var hoveredGroupID: String?
     @State private var searchOpen = false
     @State private var searchText = ""
+    @State private var selectedSessionIDs: Set<String> = []
+    @State private var selectionAnchorID: String?
     /// Directories the user opened. Active directories expand without an entry here.
     @State private var expandedGroupIDs: Set<String> = []
     /// Directories the user closed, including an active one they collapsed.
@@ -71,7 +73,11 @@ struct SidebarView: View {
                                     SessionRow(
                                         model: model,
                                         session: session,
-                                        isHovered: hoveredSessionID == session.id
+                                        isHovered: hoveredSessionID == session.id,
+                                        isSelected: selectedSessionIDs.contains(session.id),
+                                        onActivate: { activate(session.id) },
+                                        onStop: { model.stopSession(session.id) },
+                                        onDelete: { model.requestDelete([session.id]) }
                                     )
                                     .onHover { hovering in
                                         hoveredSessionID = hovering ? session.id : nil
@@ -88,12 +94,23 @@ struct SidebarView: View {
             }
             .scrollIndicators(.hidden)
 
-            footer
+            if selectedSessionIDs.isEmpty {
+                footer
+            } else {
+                selectionBar
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Palette.sidebarSurface.ignoresSafeArea())
         .onChange(of: searchOpen) { _, open in
             if !open { searchText = "" }
+        }
+        .onChange(of: model.sessions) { _, sessions in
+            let ids = Set(sessions.map(\.id))
+            selectedSessionIDs.formIntersection(ids)
+            if let anchor = selectionAnchorID, !ids.contains(anchor) {
+                selectionAnchorID = nil
+            }
         }
         .onChange(of: model.focusedSession?.cwd) { _, cwd in
             guard let cwd else { return }
@@ -179,22 +196,24 @@ struct SidebarView: View {
         Button {
             model.showNewAgent = true
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: SidebarList.iconGap) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 15, weight: .regular))
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: SidebarList.icon, height: SidebarList.icon)
                 Text("New agent")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(Typography.bodyMedium)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Palette.accent)
-            .padding(.horizontal, 12)
-            .frame(height: 36)
+            .padding(.horizontal, 8)
+            .frame(height: 32)
             .contentShape(Rectangle())
         }
         .buttonStyle(NewAgentButtonStyle())
         .focusEffectDisabled()
-        .padding(.horizontal, 10)
-        .padding(.top, 2)
+        .padding(.horizontal, SidebarList.inset)
+        .padding(.leading, SidebarList.rowLeading)
+        .padding(.top, 6)
         .help("New agent (⌘N)")
         .accessibilityLabel("New agent")
     }
@@ -299,6 +318,87 @@ struct SidebarView: View {
             || session.id.localizedStandardContains(query)
     }
 
+    private var selectedRunningSessionIDs: [String] {
+        Array(selectedSessionIDs.filter { model.session(id: $0)?.isRunning == true })
+    }
+
+    private func activate(_ sessionID: String) {
+        let flags = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags.contains(.command) {
+            selectionAnchorID = sessionID
+            if selectedSessionIDs.contains(sessionID) {
+                selectedSessionIDs.remove(sessionID)
+            } else {
+                selectedSessionIDs.insert(sessionID)
+            }
+            return
+        }
+        if flags.contains(.shift), let anchor = selectionAnchorID {
+            selectRange(from: anchor, to: sessionID)
+            return
+        }
+        clearSelection()
+        selectionAnchorID = sessionID
+        model.selectSession(sessionID)
+    }
+
+    private func selectRange(from anchor: String, to target: String) {
+        let ids = groups.flatMap { $0.sessions.map(\.id) }
+        guard let anchorIndex = ids.firstIndex(of: anchor),
+              let targetIndex = ids.firstIndex(of: target)
+        else {
+            selectedSessionIDs = [target]
+            selectionAnchorID = target
+            return
+        }
+        selectedSessionIDs = Set(
+            ids[min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)]
+        )
+    }
+
+    private func clearSelection() {
+        selectedSessionIDs.removeAll()
+        selectionAnchorID = nil
+    }
+
+    private var selectionBar: some View {
+        VStack(spacing: 0) {
+            HorizontalDivider()
+            HStack(spacing: 4) {
+                Text("\(selectedSessionIDs.count) selected")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                if !selectedRunningSessionIDs.isEmpty {
+                    Button("Stop") {
+                        model.stopSessions(selectedRunningSessionIDs)
+                    }
+                    .buttonStyle(SelectionActionButtonStyle(tint: Palette.accent))
+                    .help("Stop the selected running agents")
+                }
+                Button("Remove") {
+                    model.requestDelete(Array(selectedSessionIDs))
+                }
+                .buttonStyle(SelectionActionButtonStyle(tint: Palette.error))
+                .help("Remove the selected agents")
+                Button {
+                    clearSelection()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .semibold))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Clear selection")
+            }
+            .padding(.leading, 20)
+            .padding(.trailing, 10)
+            .frame(height: 52)
+        }
+    }
+
     private var emptyMessage: String {
         if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return "No matches"
@@ -352,7 +452,7 @@ private struct NewAgentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.primary.opacity(configuration.isPressed ? 0.14 : 0.08))
             )
     }
@@ -368,12 +468,19 @@ private struct SessionRow: View {
     @Bindable var model: AppModel
     let session: SessionInfo
     let isHovered: Bool
+    let isSelected: Bool
+    let onActivate: () -> Void
+    let onStop: () -> Void
+    let onDelete: () -> Void
 
     private var assignedPane: PaneSlot? {
         model.paneSlot(for: session.id)
     }
 
     private var background: Color {
+        if isSelected {
+            return Palette.accent.opacity(0.12)
+        }
         if assignedPane != nil {
             return Palette.sidebarSelection
         }
@@ -384,9 +491,7 @@ private struct SessionRow: View {
     }
 
     var body: some View {
-        Button {
-            model.selectSession(session.id)
-        } label: {
+        Button(action: onActivate) {
             HStack(spacing: SidebarList.iconGap) {
                 AgentMark(program: session.program)
                     .frame(width: SidebarList.icon, height: SidebarList.icon)
@@ -398,7 +503,7 @@ private struct SessionRow: View {
 
                 Spacer(minLength: 8)
 
-                if let assignedPane {
+                if let assignedPane, !isHovered {
                     Text("\(assignedPane.number)")
                         .font(.system(size: 9, weight: .bold, design: .rounded))
                         .foregroundStyle(
@@ -417,6 +522,8 @@ private struct SessionRow: View {
             .accessibilityLabel(
                 "\(AgentCatalog.displayName(for: session.program)), \(model.displayTitle(for: session))"
             )
+            .accessibilityValue(session.isRunning ? "Running" : "Stopped")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(background)
@@ -425,6 +532,22 @@ private struct SessionRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .trailing) {
+            if isHovered {
+                RowActionButton(
+                    systemImage: session.isRunning ? "stop.circle.fill" : "trash",
+                    help: session.isRunning ? "Stop agent" : "Delete agent",
+                    tint: Palette.error
+                ) {
+                    if session.isRunning {
+                        onStop()
+                    } else {
+                        onDelete()
+                    }
+                }
+                .padding(.trailing, 6)
+            }
+        }
         .contextMenu {
             Button("Fork Agent") {
                 model.forkSession(session.id)
@@ -444,9 +567,56 @@ private struct SessionRow: View {
 
             Divider()
 
-            Button("Stop Session…", role: .destructive) {
-                model.requestStop(session.id)
+            if session.isRunning {
+                Button("Stop Agent…", role: .destructive) {
+                    model.requestStop(session.id)
+                }
+            } else {
+                Button("Delete Agent…", role: .destructive, action: onDelete)
             }
         }
+    }
+}
+
+private struct RowActionButton: View {
+    let systemImage: String
+    let help: String
+    let tint: Color
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(isHovered ? tint : tint.opacity(0.75))
+                .frame(width: 20, height: 20)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+private struct SelectionActionButtonStyle: ButtonStyle {
+    let tint: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Typography.calloutMedium)
+            .foregroundStyle(tint.opacity(configuration.isPressed ? 0.7 : 1))
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.primary.opacity(configuration.isPressed ? 0.08 : 0))
+            )
+            .contentShape(Rectangle())
     }
 }

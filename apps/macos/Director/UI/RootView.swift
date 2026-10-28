@@ -42,6 +42,24 @@ struct RootView: View {
         } message: {
             Text("The process receives a termination request. Other sessions keep running.")
         }
+        .alert(
+            model.deletePromptTitle,
+            isPresented: Binding(
+                get: { !model.pendingDeleteIDs.isEmpty },
+                set: { presented in
+                    if !presented { model.cancelDelete() }
+                }
+            )
+        ) {
+            Button("Delete", role: .destructive) {
+                model.deletePendingSessions()
+            }
+            Button("Cancel", role: .cancel) {
+                model.cancelDelete()
+            }
+        } message: {
+            Text(model.deletePromptMessage)
+        }
         .overlay(alignment: .bottom) {
             if let message = model.errorMessage {
                 errorToast(message)

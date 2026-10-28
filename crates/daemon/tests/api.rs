@@ -53,10 +53,15 @@ impl Client {
             ServerMessage::Welcome {
                 protocol_version,
                 engine_state,
+                capabilities,
                 ..
             } => {
                 assert_eq!(protocol_version, PROTOCOL_VERSION);
                 assert_eq!(engine_state, director_protocol::DaemonState::Running);
+                assert!(
+                    capabilities.iter().any(|capability| capability
+                        == director_protocol::api::CAPABILITY_REMOVE_SESSION)
+                );
             }
             other => panic!("expected a welcome, got {other:?}"),
         }
@@ -366,6 +371,12 @@ async fn sessions_can_be_created_listed_inspected_and_stopped() {
         .unwrap_err();
     assert_eq!(duplicate.code, ErrorCode::DuplicateSession);
 
+    let running = client
+        .request(Command::RemoveSession { id: "one".into() })
+        .await
+        .unwrap_err();
+    assert_eq!(running.code, ErrorCode::SessionRunning);
+
     let exit = expect_exit(
         client
             .request(Command::StopSession { id: "one".into() })
@@ -405,8 +416,30 @@ async fn sessions_can_be_created_listed_inspected_and_stopped() {
         .unwrap_err();
     assert_eq!(resize.code, ErrorCode::SessionClosed);
 
+    client
+        .request(Command::RemoveSession { id: "one".into() })
+        .await
+        .expect("remove an exited session");
+    let sessions = match client
+        .request(Command::ListSessions)
+        .await
+        .expect("list sessions")
+    {
+        ResponseData::Sessions(sessions) => sessions,
+        other => panic!("expected a session list, got {other:?}"),
+    };
+    assert!(sessions.is_empty());
+
     let missing = client
         .request(Command::InspectSession {
+            id: "missing".into(),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(missing.code, ErrorCode::SessionNotFound);
+
+    let missing = client
+        .request(Command::RemoveSession {
             id: "missing".into(),
         })
         .await
@@ -517,6 +550,44 @@ async fn two_clients_observe_the_same_session() {
     let second_status = wait_for_status(&mut second, &mut second_output, "shared").await;
     assert_eq!(first_status, SessionStatus::Exited(exit.clone()));
     assert_eq!(second_status, SessionStatus::Exited(exit));
+}
+
+#[tokio::test]
+async fn removing_an_exited_session_releases_its_attachment_and_id() {
+    let daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+
+    client
+        .request(create_session("reuse", r#"printf 'ready\n'; sleep 30"#))
+        .await
+        .expect("create a session");
+    let (_, mut output) = attach(&mut client, "reuse").await;
+    collect_until(&mut client, &mut output, "ready").await;
+
+    let exit = client
+        .request(Command::StopSession { id: "reuse".into() })
+        .await
+        .expect("stop the session");
+    let exit = expect_exit(exit);
+    let status = wait_for_status(&mut client, &mut output, "reuse").await;
+    assert_eq!(status, SessionStatus::Exited(exit));
+
+    client
+        .request(Command::RemoveSession { id: "reuse".into() })
+        .await
+        .expect("remove the exited session");
+
+    client
+        .request(create_session("reuse", "sleep 30"))
+        .await
+        .expect("reuse the removed session ID");
+    attach(&mut client, "reuse").await.0;
+    client
+        .request(Command::StopSession { id: "reuse".into() })
+        .await
+        .expect("stop the replacement session");
 }
 
 #[tokio::test]

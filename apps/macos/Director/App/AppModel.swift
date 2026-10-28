@@ -121,6 +121,7 @@ final class AppModel {
     private(set) var attentionSessionIDs: Set<String> = []
     var showNewAgent = false
     var pendingStopID: String?
+    var pendingDeleteIDs: [String] = []
     var errorMessage: String?
     var isStartingDaemon = false
     var gitSnapshots: [String: GitSnapshot] = [:]
@@ -216,6 +217,32 @@ final class AppModel {
     }
 
     var runningCount: Int { sessions.filter(\.isRunning).count }
+
+    var canRemoveSessions: Bool {
+        guard case .connected(let welcome) = connection else { return false }
+        return welcome.capabilities.contains("remove_session")
+    }
+
+    var deletePromptTitle: String {
+        if pendingDeleteIDs.count == 1, let session = session(id: pendingDeleteIDs[0]) {
+            return "Delete “\(displayTitle(for: session))”?"
+        }
+        return "Delete \(pendingDeleteIDs.count) agents?"
+    }
+
+    var deletePromptMessage: String {
+        let selected = pendingDeleteIDs.compactMap { session(id: $0) }
+        let running = selected.filter(\.isRunning).count
+        if selected.count == 1 {
+            return running == 1
+                ? "The agent is still running. It will be stopped and removed from the list."
+                : "The agent will be removed from the list."
+        }
+        if running > 0 {
+            return "The \(selected.count) selected agents will be removed. \(running) running \(running == 1 ? "agent" : "agents") will be stopped first."
+        }
+        return "The \(selected.count) selected agents will be removed from the list."
+    }
 
     var contextSession: SessionInfo? { focusedSession }
 
@@ -595,14 +622,102 @@ final class AppModel {
 
     func stopSession(_ sessionID: String) {
         pendingStopID = nil
+        stopSessions([sessionID])
+    }
+
+    /// Stops the running sessions in the list. Exited sessions are ignored.
+    func stopSessions(_ sessionIDs: [String]) {
+        let ids = sessionIDs.filter { session(id: $0)?.isRunning == true }
+        guard !ids.isEmpty else { return }
         Task {
-            do {
-                _ = try await client?.stopSession(id: sessionID)
-            } catch {
-                showError("Could not stop \(sessionID): \(friendly(error))")
+            guard let client else {
+                showError("Not connected to the daemon.")
+                return
+            }
+            var firstError: Error?
+            for id in ids {
+                do {
+                    _ = try await client.stopSession(id: id)
+                } catch {
+                    firstError = firstError ?? error
+                }
+            }
+            if let firstError {
+                let label = ids.count == 1 ? ids[0] : "\(ids.count) agents"
+                showError("Could not stop \(label): \(friendly(firstError))")
             }
             try? await reloadSessions()
             await attachVisiblePanes()
+        }
+    }
+
+    func requestDelete(_ sessionIDs: [String]) {
+        guard connection.isConnected else {
+            showError("Not connected to the daemon.")
+            return
+        }
+        guard canRemoveSessions else {
+            showError("Restart the daemon to enable deleting agents.")
+            return
+        }
+        let existing = Set(sessions.map(\.id))
+        let ids = sessionIDs.filter { existing.contains($0) }
+        guard !ids.isEmpty else { return }
+        pendingDeleteIDs = ids
+    }
+
+    func cancelDelete() {
+        pendingDeleteIDs = []
+    }
+
+    func deletePendingSessions() {
+        let ids = pendingDeleteIDs
+        pendingDeleteIDs = []
+        guard !ids.isEmpty else { return }
+        Task { await deleteSessions(ids) }
+    }
+
+    private func deleteSessions(_ sessionIDs: [String]) async {
+        guard let client else {
+            showError("Not connected to the daemon.")
+            return
+        }
+
+        var firstError: Error?
+        for id in sessionIDs where session(id: id)?.isRunning == true {
+            do {
+                _ = try await client.stopSession(id: id)
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+
+        var removedIDs: Set<String> = []
+        for id in sessionIDs {
+            if attachedSessionIDs.contains(id) {
+                try? await client.detachSession(id: id)
+                attachedSessionIDs.remove(id)
+            }
+            do {
+                try await client.removeSession(id: id)
+                removedIDs.insert(id)
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+
+        try? await reloadSessions()
+        await attachVisiblePanes()
+
+        for id in removedIDs {
+            attachedSessionIDs.remove(id)
+            attachingSessionIDs.remove(id)
+            controllers.removeValue(forKey: id)
+        }
+
+        if let firstError {
+            let label = sessionIDs.count == 1 ? sessionIDs[0] : "\(sessionIDs.count) agents"
+            showError("Could not delete \(label): \(friendly(firstError))")
         }
     }
 

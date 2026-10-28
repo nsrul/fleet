@@ -278,6 +278,8 @@ pub enum SessionError {
     SessionNotFound(String),
     #[error("session {0:?} has already exited")]
     SessionClosed(String),
+    #[error("session {0:?} is still running")]
+    SessionRunning(String),
     #[error("session {id:?} failed to spawn: {source}")]
     SpawnFailed {
         id: String,
@@ -627,6 +629,19 @@ impl SessionManager {
 
     pub fn get(&self, id: &SessionId) -> Option<SessionHandle> {
         self.sessions.get(id).cloned()
+    }
+
+    /// Forgets an exited session so its ID can be reused.
+    pub fn remove(&mut self, id: &SessionId) -> Result<SessionInfo, SessionError> {
+        let Some(handle) = self.sessions.get(id) else {
+            return Err(SessionError::SessionNotFound(id.to_string()));
+        };
+        let info = handle.info();
+        if info.status.is_running() {
+            return Err(SessionError::SessionRunning(id.to_string()));
+        }
+        self.sessions.remove(id);
+        Ok(info)
     }
 
     pub fn list(&self) -> Vec<SessionInfo> {

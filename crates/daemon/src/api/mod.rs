@@ -24,9 +24,9 @@ use director_engine::{
 use director_protocol::{
     DaemonState, PROTOCOL_VERSION,
     api::{
-        ApiError, AttachedSession, Base64Bytes, ClientMessage, Command, CreateSession, ErrorCode,
-        Event, ResponseData, ResponseResult, ServerMessage, SessionExit, SessionInfo,
-        SessionStatus, TerminalSize,
+        ApiError, AttachedSession, Base64Bytes, CAPABILITY_REMOVE_SESSION, ClientMessage, Command,
+        CreateSession, ErrorCode, Event, ResponseData, ResponseResult, ServerMessage, SessionExit,
+        SessionInfo, SessionStatus, TerminalSize,
     },
 };
 use tokio::{
@@ -294,6 +294,7 @@ impl Connection {
                     protocol_version: PROTOCOL_VERSION,
                     daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
                     engine_state: daemon_state(engine_state),
+                    capabilities: vec![CAPABILITY_REMOVE_SESSION.to_owned()],
                 })?;
                 debug!(
                     client_id = self.client_id,
@@ -360,6 +361,18 @@ impl Connection {
         match command {
             Command::AttachSession { id } => self.attach(request_id, id).await,
             Command::DetachSession { id } => self.detach(request_id, id),
+            Command::RemoveSession { id } => {
+                let session_id = SessionId::new(id.clone()).ok();
+                let result = execute(&self.state, Command::RemoveSession { id }).await;
+                if result.is_ok() {
+                    if let Some(session_id) = session_id {
+                        if let Some(task) = self.attachments.remove(&session_id) {
+                            task.abort();
+                        }
+                    }
+                }
+                self.respond(request_id, result)
+            }
             command => {
                 let result = execute(&self.state, command).await;
                 self.respond(request_id, result)
@@ -538,6 +551,18 @@ async fn execute(
             let handle = find_session(state, &id).await?;
             let exit = handle.terminate().await.map_err(map_session_error)?;
             Ok(ResponseData::Exit(protocol_exit(&exit)))
+        }
+        Command::RemoveSession { id } => {
+            let id = session_id(id)?;
+            let mut engine = state.engine.lock().await;
+            if engine.state() == EngineState::Stopped {
+                return Err(ApiError::new(
+                    ErrorCode::EngineStopped,
+                    "the engine is stopped",
+                ));
+            }
+            engine.remove_session(&id).map_err(map_engine_error)?;
+            Ok(ResponseData::Acknowledged)
         }
         Command::Input { id, data } => {
             if data.len() > director_protocol::api::MAX_INPUT_BYTES {
@@ -814,6 +839,7 @@ fn map_session_error(error: SessionError) -> ApiError {
         SessionError::DuplicateSessionId(_) => ErrorCode::DuplicateSession,
         SessionError::SessionNotFound(_) => ErrorCode::SessionNotFound,
         SessionError::SessionClosed(_) => ErrorCode::SessionClosed,
+        SessionError::SessionRunning(_) => ErrorCode::SessionRunning,
         SessionError::SpawnFailed { .. } => ErrorCode::SpawnFailed,
         SessionError::InputFailed { .. } => ErrorCode::InputFailed,
         SessionError::ResizeFailed { .. } => ErrorCode::ResizeFailed,

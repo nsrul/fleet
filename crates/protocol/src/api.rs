@@ -18,6 +18,9 @@ pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 /// Largest input payload accepted in a single request.
 pub const MAX_INPUT_BYTES: usize = 1024 * 1024;
 
+/// Capabilities a daemon can advertise in its welcome message.
+pub const CAPABILITY_REMOVE_SESSION: &str = "remove_session";
+
 /// Opaque bytes encoded as a base64 string on the wire.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Base64Bytes(Vec<u8>);
@@ -122,6 +125,7 @@ pub enum Command {
     ListSessions,
     InspectSession { id: String },
     StopSession { id: String },
+    RemoveSession { id: String },
     Input { id: String, data: Base64Bytes },
     Resize { id: String, size: TerminalSize },
     AttachSession { id: String },
@@ -218,6 +222,7 @@ pub enum ErrorCode {
     DuplicateSession,
     SessionNotFound,
     SessionClosed,
+    SessionRunning,
     AlreadyAttached,
     NotAttached,
     InvalidProgram,
@@ -285,6 +290,8 @@ pub enum ServerMessage {
         protocol_version: u32,
         daemon_version: String,
         engine_state: DaemonState,
+        #[serde(default)]
+        capabilities: Vec<String>,
     },
     Rejected {
         error: ApiError,
@@ -303,8 +310,9 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        Base64Bytes, ClientMessage, Command, CreateSession, ErrorCode, Event, ResponseData,
-        ResponseResult, ServerMessage, SessionExit, SessionInfo, SessionStatus, TerminalSize,
+        Base64Bytes, CAPABILITY_REMOVE_SESSION, ClientMessage, Command, CreateSession, ErrorCode,
+        Event, ResponseData, ResponseResult, ServerMessage, SessionExit, SessionInfo,
+        SessionStatus, TerminalSize,
     };
     use crate::{DaemonState, PROTOCOL_VERSION};
 
@@ -354,6 +362,10 @@ mod tests {
         assert_eq!(
             serde_json::to_value(Command::InspectSession { id: "one".into() }).unwrap(),
             json!({"command": "inspect_session", "params": {"id": "one"}})
+        );
+        assert_eq!(
+            serde_json::to_value(Command::RemoveSession { id: "one".into() }).unwrap(),
+            json!({"command": "remove_session", "params": {"id": "one"}})
         );
     }
 
@@ -432,6 +444,7 @@ mod tests {
             protocol_version: PROTOCOL_VERSION,
             daemon_version: "0.1.0".into(),
             engine_state: DaemonState::Running,
+            capabilities: vec![CAPABILITY_REMOVE_SESSION.into()],
         };
         assert_eq!(
             serde_json::to_value(&welcome).unwrap(),
@@ -440,6 +453,7 @@ mod tests {
                 "protocol_version": 1,
                 "daemon_version": "0.1.0",
                 "engine_state": "running",
+                "capabilities": ["remove_session"],
             })
         );
     }
