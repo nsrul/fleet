@@ -230,28 +230,3 @@ struct NewAgentSheet: View {
         }
     }
 }
-
-/// Brand mark for an agent preset. Custom is a template image, so it picks up
-/// the tile foreground style. The others keep their own colors.
-private struct AgentMark: View {
-    let preset: AgentPreset
-
-    var body: some View {
-        Image(resource)
-            .resizable()
-            .interpolation(.high)
-            .scaledToFit()
-    }
-
-    private var resource: ImageResource {
-        switch preset.id {
-        case "claude": .agentClaude
-        case "codex": .agentCodex
-        case "cursor": .agentCursor
-        case "gemini": .agentGemini
-        case "opencode": .agentOpenCode
-        case "shell": .agentShell
-        default: .agentCustom
-        }
-    }
-}

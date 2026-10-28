@@ -105,6 +105,46 @@ struct StatusDot: View {
     }
 }
 
+/// Brand mark for an agent preset. Custom is a template image, so it picks up
+/// the surrounding foreground style. The others keep their own colors.
+struct AgentMark: View {
+    let preset: AgentPreset
+
+    init(preset: AgentPreset) {
+        self.preset = preset
+    }
+
+    init(program: String) {
+        self.preset = AgentCatalog.preset(forProgram: program)
+            ?? AgentPreset(
+                id: "custom",
+                title: AgentCatalog.displayName(for: program),
+                binary: program,
+                arguments: [],
+                symbol: "terminal"
+            )
+    }
+
+    var body: some View {
+        Image(resource)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+    }
+
+    private var resource: ImageResource {
+        switch preset.id {
+        case "claude": .agentClaude
+        case "codex": .agentCodex
+        case "cursor": .agentCursor
+        case "gemini": .agentGemini
+        case "opencode": .agentOpenCode
+        case "shell": .agentShell
+        default: .agentCustom
+        }
+    }
+}
+
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
