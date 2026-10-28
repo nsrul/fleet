@@ -7,8 +7,13 @@ struct SidebarView: View {
     @Environment(\.openSettings) private var openSettings
     @FocusState private var searchFocused: Bool
     @State private var hoveredSessionID: String?
+    @State private var hoveredGroupID: String?
     @State private var searchOpen = false
     @State private var searchText = ""
+    /// Directories the user opened. Active directories expand without an entry here.
+    @State private var expandedGroupIDs: Set<String> = []
+    /// Directories the user closed, including an active one they collapsed.
+    @State private var collapsedGroupIDs: Set<String> = []
 
     private var groups: [SessionGroup] {
         let filtered = model.filteredSessions.filter(matchesSearch)
@@ -36,49 +41,50 @@ struct SidebarView: View {
             newAgentControl
 
             ScrollView {
+                let sessionGroups = groups
+                let anyAssigned = sessionGroups.contains(where: containsAssignedSession)
                 LazyVStack(alignment: .leading, spacing: 0) {
                     Text("Agents")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 4)
+                        .padding(.leading, SidebarList.labelLeading)
+                        .padding(.top, 14)
+                        .padding(.bottom, 8)
 
-                    if groups.isEmpty {
+                    if sessionGroups.isEmpty {
                         Text(emptyMessage)
                             .font(Typography.captionRegular)
                             .foregroundStyle(.tertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.leading, 16)
-                            .padding(.top, 8)
+                            .padding(.leading, SidebarList.labelLeading)
+                            .padding(.top, 4)
                     }
 
-                    ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-                        Text(group.title)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                            .padding(.leading, 16)
-                            .padding(.top, index == 0 ? 8 : 18)
-                            .padding(.bottom, 6)
+                    ForEach(Array(sessionGroups.enumerated()), id: \.element.id) { index, group in
+                        let expanded = isExpanded(group, anyAssigned: anyAssigned)
+                        directoryHeader(group, index: index, expanded: expanded)
 
-                        VStack(spacing: 2) {
-                            ForEach(group.sessions) { session in
-                                SessionRow(
-                                    model: model,
-                                    session: session,
-                                    isHovered: hoveredSessionID == session.id
-                                )
-                                .padding(.horizontal, 10)
-                                .onHover { hovering in
-                                    hoveredSessionID = hovering ? session.id : nil
+                        if expanded {
+                            VStack(spacing: 2) {
+                                ForEach(group.sessions) { session in
+                                    SessionRow(
+                                        model: model,
+                                        session: session,
+                                        isHovered: hoveredSessionID == session.id
+                                    )
+                                    .onHover { hovering in
+                                        hoveredSessionID = hovering ? session.id : nil
+                                    }
                                 }
                             }
+                            .padding(.top, 2)
+                            .padding(.bottom, 6)
                         }
                     }
                 }
-                .padding(.bottom, 16)
+                .padding(.horizontal, SidebarList.inset)
+                .padding(.bottom, 12)
             }
             .scrollIndicators(.hidden)
 
@@ -89,14 +95,19 @@ struct SidebarView: View {
         .onChange(of: searchOpen) { _, open in
             if !open { searchText = "" }
         }
+        .onChange(of: model.focusedSession?.cwd) { _, cwd in
+            guard let cwd else { return }
+            collapsedGroupIDs.remove(cwd)
+            expandedGroupIDs.insert(cwd)
+        }
     }
 
     private var toolRow: some View {
         HStack(spacing: 2) {
             Spacer(minLength: 0)
             sidebarIconButton(
-                systemImage: "magnifyingglass",
-                help: "Search",
+                systemImage: searchOpen ? "chevron.up" : "magnifyingglass",
+                help: searchOpen ? "Close search" : "Search",
                 isOn: searchOpen
             ) {
                 searchOpen.toggle()
@@ -210,6 +221,73 @@ struct SidebarView: View {
         .accessibilityLabel(help)
     }
 
+    private func directoryHeader(_ group: SessionGroup, index: Int, expanded: Bool) -> some View {
+        let active = containsAssignedSession(group)
+        return Button {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                toggleGroup(group.id, expanded: expanded)
+            }
+        } label: {
+            HStack(spacing: SidebarList.chevronGap) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .frame(width: SidebarList.chevron, height: SidebarList.chevron)
+                Text(group.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(active ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, SidebarList.labelLeading)
+            .padding(.trailing, 6)
+            .frame(height: 26)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(hoveredGroupID == group.id ? Palette.sidebarHover : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .padding(.top, index == 0 ? 0 : 10)
+        .onHover { hovering in
+            hoveredGroupID = hovering ? group.id : (hoveredGroupID == group.id ? nil : hoveredGroupID)
+        }
+        .accessibilityLabel(group.title)
+        .accessibilityValue(expanded ? "expanded" : "collapsed")
+        .help(expanded ? "Collapse \(group.title)" : "Expand \(group.title)")
+    }
+
+    private func containsAssignedSession(_ group: SessionGroup) -> Bool {
+        group.sessions.contains { model.paneSlot(for: $0.id) != nil }
+    }
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Active directories (ones with a session in a pane) start open.
+    /// A search shows every matching directory open.
+    private func isExpanded(_ group: SessionGroup, anyAssigned: Bool) -> Bool {
+        if isSearching { return true }
+        if collapsedGroupIDs.contains(group.id) { return false }
+        if expandedGroupIDs.contains(group.id) { return true }
+        if !anyAssigned { return true }
+        return containsAssignedSession(group)
+    }
+
+    private func toggleGroup(_ id: String, expanded: Bool) {
+        if expanded {
+            expandedGroupIDs.remove(id)
+            collapsedGroupIDs.insert(id)
+        } else {
+            collapsedGroupIDs.remove(id)
+            expandedGroupIDs.insert(id)
+        }
+    }
+
     private func matchesSearch(_ session: SessionInfo) -> Bool {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return true }
@@ -257,6 +335,19 @@ struct SidebarView: View {
     }
 }
 
+/// One inset for the agent list, so the section label, directory chevron,
+/// and row icons share a column and the directory name lines up with the icons.
+private enum SidebarList {
+    static let inset: CGFloat = 10
+    static let labelLeading: CGFloat = 6
+    static let chevron: CGFloat = 12
+    static let chevronGap: CGFloat = 6
+    static let icon: CGFloat = 16
+    static let iconGap: CGFloat = 8
+    /// Pill starts just left of the directory title. Icon then lands on that title.
+    static var rowLeading: CGFloat { labelLeading + chevron + chevronGap - 8 }
+}
+
 private struct NewAgentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -282,10 +373,6 @@ private struct SessionRow: View {
         model.paneSlot(for: session.id)
     }
 
-    private var isFocusedRow: Bool {
-        assignedPane == model.focusedPane
-    }
-
     private var background: Color {
         if assignedPane != nil {
             return Palette.sidebarSelection
@@ -300,57 +387,41 @@ private struct SessionRow: View {
         Button {
             model.selectSession(session.id)
         } label: {
-            HStack(spacing: 9) {
-                StatusDot(status: session.status)
-                    .frame(width: 7)
+            HStack(spacing: SidebarList.iconGap) {
+                AgentMark(program: session.program)
+                    .frame(width: SidebarList.icon, height: SidebarList.icon)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(model.displayTitle(for: session))
-                        .font(Typography.bodyMedium)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(Typography.captionRegular)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                Text(model.displayTitle(for: session))
+                    .font(Typography.bodyMedium)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
 
-                Spacer(minLength: 4)
+                Spacer(minLength: 8)
 
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(model.statusLabel(for: session))
-                        .font(Typography.captionRegular)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-
-                    if let assignedPane {
-                        Text("\(assignedPane.number)")
-                            .font(.system(size: 9, weight: .bold, design: .rounded))
-                            .foregroundStyle(
-                                assignedPane == model.focusedPane ? Palette.accent : Color.secondary
-                            )
-                            .frame(width: 14, height: 12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                    .fill(Color.primary.opacity(0.06))
-                            )
-                    }
+                if let assignedPane {
+                    Text("\(assignedPane.number)")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            assignedPane == model.focusedPane ? Palette.accent : Color.secondary
+                        )
+                        .frame(width: 16, height: 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color.primary.opacity(0.06))
+                        )
                 }
             }
-            .padding(.horizontal, 11)
-            .frame(height: 44)
+            .padding(.leading, 8)
+            .padding(.trailing, 8)
+            .frame(height: 32)
+            .accessibilityLabel(
+                "\(AgentCatalog.displayName(for: session.program)), \(model.displayTitle(for: session))"
+            )
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(background)
             )
-            .overlay(alignment: .leading) {
-                if isFocusedRow {
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Palette.accent)
-                        .frame(width: 2, height: 18)
-                        .padding(.leading, 4)
-                }
-            }
+            .padding(.leading, SidebarList.rowLeading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -377,12 +448,5 @@ private struct SessionRow: View {
                 model.requestStop(session.id)
             }
         }
-    }
-
-    private var subtitle: String {
-        let agent = AgentCatalog.displayName(for: session.program)
-        let location = model.branch(for: session.cwd)
-            ?? (session.cwd as NSString).lastPathComponent
-        return "\(agent) · \(location)"
     }
 }

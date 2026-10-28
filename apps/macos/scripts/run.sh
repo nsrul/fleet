@@ -17,9 +17,30 @@ if [ "$BUILD" -eq 1 ]; then
 fi
 
 APP_BINARY="$APP_DIR/.build/Build/Products/Debug/Director.app/Contents/MacOS/Director"
+APP_DYLIB="$APP_DIR/.build/Build/Products/Debug/Director.app/Contents/MacOS/Director.debug.dylib"
 if [ ! -x "$APP_BINARY" ]; then
   echo "error: Director.app is not built; run apps/macos/scripts/build.sh first." >&2
   exit 1
+fi
+
+# A running Director keeps the binary it launched with. After a rebuild, quit
+# it so the new app is the one that opens.
+if pgrep -f "$APP_BINARY" >/dev/null 2>&1; then
+  running_pid="$(pgrep -f "$APP_BINARY" | head -1)"
+  binary_mtime="$(stat -f %m "$APP_DYLIB" 2>/dev/null || stat -f %m "$APP_BINARY")"
+  start="$(ps -p "$running_pid" -o lstart= | sed 's/^ *//')"
+  start_epoch="$(date -j -f "%a %b %e %T %Y" "$start" "+%s" 2>/dev/null || echo 0)"
+  if [ "$binary_mtime" -gt "$start_epoch" ]; then
+    osascript -e 'tell application "Director" to quit' >/dev/null 2>&1 || true
+    for _ in $(seq 1 50); do
+      pgrep -f "$APP_BINARY" >/dev/null 2>&1 || break
+      sleep 0.1
+    done
+    if pgrep -f "$APP_BINARY" >/dev/null 2>&1; then
+      kill "$running_pid" >/dev/null 2>&1 || true
+      sleep 0.2
+    fi
+  fi
 fi
 
 if [ ! -S "$SOCKET" ]; then
