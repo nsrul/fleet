@@ -82,12 +82,20 @@ enum DaemonLaunchError: Error, LocalizedError {
     case exited(code: Int32, log: String)
     case timedOut(log: String)
 
-    var errorDescription: String? {
+    var notice: UserNotice {
         switch self {
         case .exited(let code, let log):
-            return "director-daemon exited with code \(code). See \(log)."
+            return UserNotice(
+                "The daemon quit while starting.",
+                detail: "It exited with code \(code). The log is \(AgentNotices.displayPath(log))."
+            )
         case .timedOut(let log):
-            return "director-daemon did not open its socket in time. See \(log)."
+            return UserNotice(
+                "The daemon did not become ready.",
+                detail: "It did not open its socket in time. The log is \(AgentNotices.displayPath(log))."
+            )
         }
     }
+
+    var errorDescription: String? { notice.paragraph }
 }

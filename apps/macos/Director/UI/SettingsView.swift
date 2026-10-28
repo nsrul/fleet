@@ -75,11 +75,7 @@ struct SettingsView: View {
                 }
 
                 if let failure = model.connection.failure {
-                    Text(failure)
-                        .font(Typography.captionRegular)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    NoticeCopy(notice: failure, selectable: true)
                 }
 
                 HStack(spacing: 10) {

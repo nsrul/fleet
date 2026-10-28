@@ -59,6 +59,16 @@ extension Color {
     }
 }
 
+/// Shared metrics for the top chrome so the sidebar tools, pane toggles, and
+/// context tabs share one row height and control size.
+enum WorkspaceChrome {
+    static let barHeight: CGFloat = 38
+    static let controlSize: CGFloat = 28
+    static let controlRadius: CGFloat = 7
+    static let trailingInset: CGFloat = 8
+    static var controlTopInset: CGFloat { (barHeight - controlSize) / 2 }
+}
+
 enum Typography {
     static let largeTitle = Font.system(size: 26, weight: .bold)
     static let title = Font.system(size: 17, weight: .semibold)
@@ -204,11 +214,11 @@ struct PanelToggleButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(isOn ? Palette.terminalTitle : Palette.terminalSecondary.opacity(0.65))
-                .frame(width: 26, height: 24)
+                .frame(width: WorkspaceChrome.controlSize, height: WorkspaceChrome.controlSize)
                 .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: WorkspaceChrome.controlRadius, style: .continuous)
                         .fill(Color.white.opacity(isOn ? 0.1 : 0))
                 )
                 .contentShape(Rectangle())

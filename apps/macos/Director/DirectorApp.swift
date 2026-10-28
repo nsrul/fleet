@@ -64,6 +64,12 @@ struct DirectorCommands: Commands {
                 model.requestStopFocused()
             }
             .disabled(model.focusedSession == nil)
+
+            Button("Delete Session…") {
+                model.requestDeleteFocused()
+            }
+            .disabled(model.focusedSession == nil)
+            .keyboardShortcut(.delete, modifiers: .command)
         }
 
         CommandGroup(after: .toolbar) {

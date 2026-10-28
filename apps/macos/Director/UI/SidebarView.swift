@@ -47,12 +47,14 @@ struct SidebarView: View {
                 let anyAssigned = sessionGroups.contains(where: containsAssignedSession)
                 LazyVStack(alignment: .leading, spacing: 0) {
                     Text("Agents")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(Typography.caption)
+                        .fontWeight(.semibold)
                         .foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.isHeader)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.leading, SidebarList.labelLeading)
-                        .padding(.top, 14)
-                        .padding(.bottom, 8)
+                        .padding(.top, 16)
+                        .padding(.bottom, 6)
 
                     if sessionGroups.isEmpty {
                         Text(emptyMessage)
@@ -117,6 +119,13 @@ struct SidebarView: View {
             collapsedGroupIDs.remove(cwd)
             expandedGroupIDs.insert(cwd)
         }
+        .onDeleteCommand {
+            if !selectedSessionIDs.isEmpty {
+                model.requestDelete(Array(selectedSessionIDs))
+            } else if let id = model.focusedSession?.id {
+                model.requestDelete([id])
+            }
+        }
     }
 
     private var toolRow: some View {
@@ -131,8 +140,8 @@ struct SidebarView: View {
             }
             filterMenu
         }
-        .padding(.trailing, 8)
-        .frame(height: 38)
+        .padding(.trailing, WorkspaceChrome.trailingInset)
+        .frame(height: WorkspaceChrome.barHeight)
     }
 
     private var filterMenu: some View {
@@ -148,10 +157,16 @@ struct SidebarView: View {
             Image(systemName: "line.3.horizontal.decrease")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(model.filter == .all ? Color.secondary : Palette.accent)
-                .frame(width: 28, height: 28)
+                .frame(
+                    width: WorkspaceChrome.controlSize,
+                    height: WorkspaceChrome.controlSize
+                )
                 .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.primary.opacity(model.filter == .all ? 0 : 0.08))
+                    RoundedRectangle(
+                        cornerRadius: WorkspaceChrome.controlRadius,
+                        style: .continuous
+                    )
+                    .fill(Color.primary.opacity(model.filter == .all ? 0 : 0.08))
                 )
         }
         .menuStyle(.borderlessButton)
@@ -196,26 +211,29 @@ struct SidebarView: View {
         Button {
             model.showNewAgent = true
         } label: {
-            HStack(spacing: SidebarList.iconGap) {
+            HStack(spacing: 10) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: SidebarList.icon, height: SidebarList.icon)
+                    .font(.system(size: 16, weight: .medium))
+                    // The pencil tip sits in the symbol box, so the square reads low.
+                    .offset(y: -1.5)
                 Text("New agent")
                     .font(Typography.bodyMedium)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Palette.accent)
-            .padding(.horizontal, 8)
+            // Symbol bearing is about 2pt, so the ink lands on the Agents heading.
+            .padding(.leading, SidebarList.labelLeading - 2)
+            .padding(.trailing, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 32)
             .contentShape(Rectangle())
         }
         .buttonStyle(NewAgentButtonStyle())
         .focusEffectDisabled()
-        .padding(.horizontal, SidebarList.inset)
-        .padding(.leading, SidebarList.rowLeading)
-        .padding(.top, 6)
         .help("New agent (⌘N)")
         .accessibilityLabel("New agent")
+        .padding(.horizontal, SidebarList.inset)
+        .padding(.top, 6)
     }
 
     private func sidebarIconButton(
@@ -228,10 +246,16 @@ struct SidebarView: View {
             Image(systemName: systemImage)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(isOn ? Color.primary : Color.secondary)
-                .frame(width: 28, height: 28)
+                .frame(
+                    width: WorkspaceChrome.controlSize,
+                    height: WorkspaceChrome.controlSize
+                )
                 .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.primary.opacity(isOn ? 0.08 : 0))
+                    RoundedRectangle(
+                        cornerRadius: WorkspaceChrome.controlRadius,
+                        style: .continuous
+                    )
+                    .fill(Color.primary.opacity(isOn ? 0.08 : 0))
                 )
                 .contentShape(Rectangle())
         }
@@ -247,21 +271,26 @@ struct SidebarView: View {
                 toggleGroup(group.id, expanded: expanded)
             }
         } label: {
-            HStack(spacing: SidebarList.chevronGap) {
+            HStack(spacing: SidebarList.iconGap) {
+                Image(systemName: active ? "folder.fill" : "folder")
+                    .font(.system(size: 13, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(active ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
+                    .frame(width: SidebarList.icon, height: SidebarList.icon)
+                Text(group.title)
+                    .font(Typography.bodyMedium)
+                    .foregroundStyle(active ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.tertiary)
                     .rotationEffect(.degrees(expanded ? 90 : 0))
                     .frame(width: SidebarList.chevron, height: SidebarList.chevron)
-                Text(group.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(active ? Color.primary : Color.secondary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
             }
             .padding(.leading, SidebarList.labelLeading)
-            .padding(.trailing, 6)
-            .frame(height: 26)
+            .padding(.trailing, 8)
+            .frame(height: 28)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(hoveredGroupID == group.id ? Palette.sidebarHover : .clear)
@@ -274,7 +303,7 @@ struct SidebarView: View {
         .onHover { hovering in
             hoveredGroupID = hovering ? group.id : (hoveredGroupID == group.id ? nil : hoveredGroupID)
         }
-        .accessibilityLabel(group.title)
+        .accessibilityLabel("\(group.title), directory")
         .accessibilityValue(expanded ? "expanded" : "collapsed")
         .help(expanded ? "Collapse \(group.title)" : "Expand \(group.title)")
     }
@@ -435,17 +464,20 @@ struct SidebarView: View {
     }
 }
 
-/// One inset for the agent list, so the section label, directory chevron,
-/// and row icons share a column and the directory name lines up with the icons.
+/// Shared columns for the agent list.
+/// The section label and the directory folder share the first column.
+/// An agent row steps in so its mark sits under the directory name and the
+/// row reads as content of that accordion. The chevron stays on the trailing edge.
 private enum SidebarList {
     static let inset: CGFloat = 10
     static let labelLeading: CGFloat = 6
     static let chevron: CGFloat = 12
-    static let chevronGap: CGFloat = 6
     static let icon: CGFloat = 16
     static let iconGap: CGFloat = 8
-    /// Pill starts just left of the directory title. Icon then lands on that title.
-    static var rowLeading: CGFloat { labelLeading + chevron + chevronGap - 8 }
+    /// Inset of the mark inside the session pill.
+    static let rowIconLeading: CGFloat = labelLeading
+    /// Indents the pill until the mark lands on the directory name.
+    static var rowLeading: CGFloat { icon + iconGap }
 }
 
 private struct NewAgentButtonStyle: ButtonStyle {
@@ -472,12 +504,17 @@ private struct SessionRow: View {
     let onActivate: () -> Void
     let onStop: () -> Void
     let onDelete: () -> Void
+    @State private var isRenaming = false
+    @State private var draft = ""
 
     private var assignedPane: PaneSlot? {
         model.paneSlot(for: session.id)
     }
 
     private var background: Color {
+        if isRenaming {
+            return Palette.sidebarHover
+        }
         if isSelected {
             return Palette.accent.opacity(0.12)
         }
@@ -491,64 +528,92 @@ private struct SessionRow: View {
     }
 
     var body: some View {
-        Button(action: onActivate) {
-            HStack(spacing: SidebarList.iconGap) {
-                AgentMark(program: session.program)
-                    .frame(width: SidebarList.icon, height: SidebarList.icon)
-
-                Text(model.displayTitle(for: session))
-                    .font(Typography.bodyMedium)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 8)
-
-                if let assignedPane, !isHovered {
-                    Text("\(assignedPane.number)")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            assignedPane == model.focusedPane ? Palette.accent : Color.secondary
-                        )
-                        .frame(width: 16, height: 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(Color.primary.opacity(0.06))
-                        )
+        HStack(spacing: 0) {
+            if isRenaming {
+                HStack(spacing: SidebarList.iconGap) {
+                    AgentMark(program: session.program)
+                        .frame(width: SidebarList.icon, height: SidebarList.icon)
+                    InlineNameField(text: $draft, onCommit: commitRename, onCancel: cancelRename)
+                        .frame(height: 18)
+                        .accessibilityLabel("Session name")
                 }
-            }
-            .padding(.leading, 8)
-            .padding(.trailing, 8)
-            .frame(height: 32)
-            .accessibilityLabel(
-                "\(AgentCatalog.displayName(for: session.program)), \(model.displayTitle(for: session))"
-            )
-            .accessibilityValue(session.isRunning ? "Running" : "Stopped")
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(background)
-            )
-            .padding(.leading, SidebarList.rowLeading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .overlay(alignment: .trailing) {
-            if isHovered {
-                RowActionButton(
-                    systemImage: session.isRunning ? "stop.circle.fill" : "trash",
-                    help: session.isRunning ? "Stop agent" : "Delete agent",
-                    tint: Palette.error
-                ) {
-                    if session.isRunning {
-                        onStop()
-                    } else {
-                        onDelete()
+                .padding(.leading, SidebarList.rowIconLeading)
+                .padding(.trailing, 8)
+                .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+            } else {
+                Button(action: onActivate) {
+                    HStack(spacing: SidebarList.iconGap) {
+                        AgentMark(program: session.program)
+                            .frame(width: SidebarList.icon, height: SidebarList.icon)
+
+                        Text(model.displayTitle(for: session))
+                            .font(Typography.bodyMedium)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+
+                        Spacer(minLength: 8)
+
+                        if let assignedPane, !isHovered {
+                            Text("\(assignedPane.number)")
+                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                                .foregroundStyle(
+                                    assignedPane == model.focusedPane ? Palette.accent : Color.secondary
+                                )
+                                .frame(width: 16, height: 14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(Color.primary.opacity(0.06))
+                                )
+                        }
                     }
+                    .padding(.leading, SidebarList.rowIconLeading)
+                    .padding(.trailing, isHovered ? 2 : 8)
+                    .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-                .padding(.trailing, 6)
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    "\(AgentCatalog.displayName(for: session.program)), \(model.displayTitle(for: session))"
+                )
+                .accessibilityValue(session.isRunning ? "Running" : "Stopped")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+                if isHovered {
+                    HStack(spacing: 2) {
+                        if session.isRunning {
+                            RowActionButton(
+                                systemImage: "stop.circle.fill",
+                                help: "Stop agent",
+                                tint: Palette.error,
+                                action: onStop
+                            )
+                        }
+                        RowActionButton(
+                            systemImage: "trash",
+                            help: "Delete agent",
+                            tint: Palette.error,
+                            action: onDelete
+                        )
+                    }
+                    .padding(.trailing, 6)
+                }
             }
         }
+        .frame(height: 32)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(background)
+        )
+        .padding(.leading, SidebarList.rowLeading)
         .contextMenu {
+            Button("Rename") {
+                draft = model.displayTitle(for: session)
+                // The menu is still dismissing on this turn and would steal focus.
+                Task { @MainActor in
+                    isRenaming = true
+                }
+            }
+
             Button("Fork Agent") {
                 model.forkSession(session.id)
             }
@@ -571,9 +636,98 @@ private struct SessionRow: View {
                 Button("Stop Agent…", role: .destructive) {
                     model.requestStop(session.id)
                 }
-            } else {
-                Button("Delete Agent…", role: .destructive, action: onDelete)
             }
+
+            Button("Delete Agent…", role: .destructive, action: onDelete)
+        }
+    }
+
+    private func commitRename(_ value: String) {
+        guard isRenaming else { return }
+        isRenaming = false
+        model.setSessionName(session.id, value)
+    }
+
+    private func cancelRename() {
+        isRenaming = false
+    }
+}
+
+/// A borderless field that edits a session name in the row and selects the text.
+private struct InlineNameField: NSViewRepresentable {
+    @Binding var text: String
+    var onCommit: (String) -> Void
+    var onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(string: text)
+        field.isBezeled = false
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .systemFont(ofSize: 13, weight: .medium)
+        field.textColor = .labelColor
+        field.lineBreakMode = .byTruncatingTail
+        field.maximumNumberOfLines = 1
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.cell?.usesSingleLineMode = true
+        field.delegate = context.coordinator
+        context.coordinator.armFocus(field)
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        guard field.currentEditor() == nil, field.stringValue != text else { return }
+        field.stringValue = text
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: InlineNameField
+        private var didFocus = false
+        private var focusAttempts = 0
+        private var cancelled = false
+
+        init(_ parent: InlineNameField) {
+            self.parent = parent
+        }
+
+        func armFocus(_ field: NSTextField) {
+            Task { @MainActor [weak self, weak field] in
+                guard let self, let field, !self.didFocus else { return }
+                guard let window = field.window else {
+                    self.focusAttempts += 1
+                    if self.focusAttempts < 6 { self.armFocus(field) }
+                    return
+                }
+                self.didFocus = true
+                window.makeFirstResponder(field)
+                field.currentEditor()?.selectAll(nil)
+            }
+        }
+
+        func control(
+            _ control: NSControl,
+            textView: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool {
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                cancelled = true
+                parent.onCancel()
+                return true
+            }
+            return false
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard !cancelled, let field = notification.object as? NSTextField else { return }
+            parent.onCommit(field.stringValue)
         }
     }
 }

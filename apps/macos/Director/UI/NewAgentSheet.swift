@@ -9,7 +9,7 @@ struct NewAgentSheet: View {
     @State private var customProgram = ""
     @State private var name = ""
     @State private var cwd = AppModel.defaultWorkingDirectory
-    @State private var errorMessage: String?
+    @State private var notice: UserNotice?
     @State private var isCreating = false
 
     private var preset: AgentPreset { AgentCatalog.preset(for: presetID) }
@@ -79,11 +79,12 @@ struct NewAgentSheet: View {
                 }
             }
 
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(Typography.captionRegular)
-                    .foregroundStyle(Palette.error)
-                    .fixedSize(horizontal: false, vertical: true)
+            if let notice {
+                NoticeCopy(
+                    notice: notice,
+                    titleColor: Palette.error,
+                    selectable: true
+                )
             }
 
             Spacer(minLength: 0)
@@ -116,6 +117,9 @@ struct NewAgentSheet: View {
         }
         .padding(24)
         .frame(width: 500, height: 560)
+        .onChange(of: cwd) { _, _ in notice = nil }
+        .onChange(of: name) { _, _ in notice = nil }
+        .onChange(of: customProgram) { _, _ in notice = nil }
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
@@ -128,7 +132,7 @@ struct NewAgentSheet: View {
         let selected = presetID == item.id
         return Button {
             presetID = item.id
-            errorMessage = nil
+            notice = nil
         } label: {
             HStack(spacing: 8) {
                 AgentMark(preset: item)
@@ -196,12 +200,14 @@ struct NewAgentSheet: View {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory),
               isDirectory.boolValue else {
-            errorMessage = "The working directory does not exist."
+            notice = AgentNotices.missingFolder(expanded)
             return
         }
 
         isCreating = true
-        errorMessage = nil
+        notice = nil
+        let requested = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = requested.isEmpty ? (program as NSString).lastPathComponent : requested
         Task {
             defer { isCreating = false }
             do {
@@ -213,7 +219,12 @@ struct NewAgentSheet: View {
                 )
                 dismiss()
             } catch {
-                errorMessage = error.localizedDescription
+                notice = AgentNotices.explain(
+                    error,
+                    action: .create,
+                    agent: AppModel.displayTitle(forSessionID: label),
+                    exit: nil
+                )
             }
         }
     }

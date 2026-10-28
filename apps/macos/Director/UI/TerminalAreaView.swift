@@ -21,14 +21,14 @@ struct TerminalAreaView: View {
             if showsChromeToggles {
                 sidebarToggle
                     .padding(.leading, model.showSidebar ? 14 : 78)
-                    .padding(.top, 18)
+                    .padding(.top, WorkspaceChrome.controlTopInset)
             }
         }
         .overlay(alignment: .topTrailing) {
             if showsChromeToggles {
                 contextToggle
-                    .padding(.trailing, 16)
-                    .padding(.top, 18)
+                    .padding(.trailing, WorkspaceChrome.trailingInset)
+                    .padding(.top, WorkspaceChrome.controlTopInset)
             }
         }
     }

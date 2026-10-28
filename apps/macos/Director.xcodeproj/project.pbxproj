@@ -26,6 +26,7 @@
 		DFC89483CC57A3A8158692F2 /* GitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1588CF7FFCE4BF2A35E269FA /* GitService.swift */; };
 		E855D1A04329CB355BAD2A66 /* DirectorAPI in Frameworks */ = {isa = PBXBuildFile; productRef = 1195348D00667876937EE9D8 /* DirectorAPI */; };
 		F0ACCD61A4E79A5636515726 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543E2CB5BFEDFAC0BD499F7F /* AppModel.swift */; };
+		F19B6E2A84C047D3A5E7B024 /* UserNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C3E1D74F2B49A0B6D5C813 /* UserNotice.swift */; };
 		FC168906466AE8630F37CE81 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 616FD0BB9AD2C052ADBAC31C /* SwiftTerm */; };
 /* End PBXBuildFile section */
 
@@ -37,6 +38,7 @@
 		43C0E67DD3E2FEC4D32C39A2 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		4E9A706FB26FE0E78967D28D /* DirectorKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DirectorKit; path = DirectorKit; sourceTree = SOURCE_ROOT; };
 		543E2CB5BFEDFAC0BD499F7F /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		A8C3E1D74F2B49A0B6D5C813 /* UserNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserNotice.swift; sourceTree = "<group>"; };
 		5AC1E77CFD812E8616F94DA4 /* TerminalPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalPaneView.swift; sourceTree = "<group>"; };
 		5C3194B74120B5B2E0D80452 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		600F129F29C3CC64CF31A9F3 /* AgentCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCatalog.swift; sourceTree = "<group>"; };
@@ -151,6 +153,7 @@
 			isa = PBXGroup;
 			children = (
 				543E2CB5BFEDFAC0BD499F7F /* AppModel.swift */,
+				A8C3E1D74F2B49A0B6D5C813 /* UserNotice.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -257,6 +260,7 @@
 			files = (
 				4358F833ED303E1DF00A1CCC /* AgentCatalog.swift in Sources */,
 				F0ACCD61A4E79A5636515726 /* AppModel.swift in Sources */,
+				F19B6E2A84C047D3A5E7B024 /* UserNotice.swift in Sources */,
 				072AD4B30845E0DADF9B7A01 /* ConnectionView.swift in Sources */,
 				9514F599439CBFD7DC71A93D /* ContextPanelView.swift in Sources */,
 				AD948E403DA8D3B12AAD6159 /* DaemonLauncher.swift in Sources */,
