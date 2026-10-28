@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		072AD4B30845E0DADF9B7A01 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD8F5EE9C0AD174D7D4C7E77 /* ConnectionView.swift */; };
 		12979596D05C516FEBC0F222 /* NewAgentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B94ECF9407E7B40225964558 /* NewAgentSheet.swift */; };
+		260D8F734E8BBBDEB4C97ABB /* PanelLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CF2801ED56BF98F0165768 /* PanelLayout.swift */; };
 		4358F833ED303E1DF00A1CCC /* AgentCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600F129F29C3CC64CF31A9F3 /* AgentCatalog.swift */; };
 		4CF8D80E6921F69B7279B3D6 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43C0E67DD3E2FEC4D32C39A2 /* Theme.swift */; };
 		7411DC1B879BF8C5FF46DDB8 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5C66C2592240B164E5CA5AD /* RootView.swift */; };
@@ -40,6 +41,7 @@
 		5C3194B74120B5B2E0D80452 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		600F129F29C3CC64CF31A9F3 /* AgentCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCatalog.swift; sourceTree = "<group>"; };
 		8D67CA95DEF37B009869F349 /* DaemonLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaemonLauncher.swift; sourceTree = "<group>"; };
+		A2CF2801ED56BF98F0165768 /* PanelLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLayout.swift; sourceTree = "<group>"; };
 		B3C0FB9DE4A58BCA9542FDBF /* ContextPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextPanelView.swift; sourceTree = "<group>"; };
 		B5C66C2592240B164E5CA5AD /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		B69A3A435A88FAD0A48F6352 /* TerminalAreaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAreaView.swift; sourceTree = "<group>"; };
@@ -126,6 +128,7 @@
 				DD8F5EE9C0AD174D7D4C7E77 /* ConnectionView.swift */,
 				B3C0FB9DE4A58BCA9542FDBF /* ContextPanelView.swift */,
 				B94ECF9407E7B40225964558 /* NewAgentSheet.swift */,
+				A2CF2801ED56BF98F0165768 /* PanelLayout.swift */,
 				B5C66C2592240B164E5CA5AD /* RootView.swift */,
 				5C3194B74120B5B2E0D80452 /* SettingsView.swift */,
 				32D3D26597DCFB18DD9406BD /* SidebarView.swift */,
@@ -260,6 +263,7 @@
 				D7B8CCEC626682F9CCB571FD /* DirectorApp.swift in Sources */,
 				DFC89483CC57A3A8158692F2 /* GitService.swift in Sources */,
 				12979596D05C516FEBC0F222 /* NewAgentSheet.swift in Sources */,
+				260D8F734E8BBBDEB4C97ABB /* PanelLayout.swift in Sources */,
 				7411DC1B879BF8C5FF46DDB8 /* RootView.swift in Sources */,
 				9CEAA78A5321355EF6AE953B /* SettingsView.swift in Sources */,
 				BFAC9268A0630C573735E8B3 /* SidebarView.swift in Sources */,

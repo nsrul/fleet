@@ -5,15 +5,8 @@ struct RootView: View {
     @AppStorage("appearance") private var appearanceRaw = AppAppearance.light.rawValue
 
     var body: some View {
-        HStack(spacing: 0) {
-            SidebarView(model: model)
-
-            TerminalAreaView(model: model)
-
-            if model.showContext, model.connection.isConnected {
-                ContextPanelView(model: model)
-            }
-        }
+        WorkspaceColumns(model: model)
+        .ignoresSafeArea(edges: .top)
         .frame(minWidth: 1080, minHeight: 680)
         .background(Palette.windowBackground)
         .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme ?? .light)

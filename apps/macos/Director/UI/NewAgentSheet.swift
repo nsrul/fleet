@@ -89,12 +89,7 @@ struct NewAgentSheet: View {
             Spacer(minLength: 0)
 
             HStack(spacing: 10) {
-                Text("The agent runs in its own PTY. Closing Director leaves it running.")
-                    .font(Typography.captionRegular)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(2)
-
-                Spacer(minLength: 8)
+                Spacer(minLength: 0)
 
                 Button("Cancel") {
                     dismiss()
@@ -125,22 +120,8 @@ struct NewAgentSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Image(nsImage: NSApplication.shared.applicationIconImage)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 40, height: 40)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("New agent")
-                    .font(.system(size: 19, weight: .semibold))
-                Text("Launch a local CLI in a live terminal pane.")
-                    .font(Typography.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
+        Text("New agent")
+            .font(.system(size: 15, weight: .semibold))
     }
 
     private func presetTile(_ item: AgentPreset) -> some View {
@@ -149,28 +130,27 @@ struct NewAgentSheet: View {
             presetID = item.id
             errorMessage = nil
         } label: {
-            VStack(spacing: 5) {
-                Image(systemName: item.symbol)
-                    .font(.system(size: 15, weight: .regular))
-                    .frame(height: 17)
+            HStack(spacing: 8) {
+                AgentMark(preset: item)
+                    .frame(width: 16, height: 16)
                 Text(item.title)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
+                    .foregroundStyle(selected ? Palette.accent : Color.primary)
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 52)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 36)
             .foregroundStyle(selected ? Palette.accent : Color.primary)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(selected ? Palette.accent.opacity(0.10) : Color.primary.opacity(0.04))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(selected ? Palette.accent : Color.clear, lineWidth: 1)
-            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
     }
 
     @ViewBuilder
@@ -247,6 +227,31 @@ struct NewAgentSheet: View {
         panel.directoryURL = URL(fileURLWithPath: NSString(string: cwd).expandingTildeInPath)
         if panel.runModal() == .OK, let url = panel.url {
             cwd = url.path
+        }
+    }
+}
+
+/// Brand mark for an agent preset. Custom is a template image, so it picks up
+/// the tile foreground style. The others keep their own colors.
+private struct AgentMark: View {
+    let preset: AgentPreset
+
+    var body: some View {
+        Image(resource)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+    }
+
+    private var resource: ImageResource {
+        switch preset.id {
+        case "claude": .agentClaude
+        case "codex": .agentCodex
+        case "cursor": .agentCursor
+        case "gemini": .agentGemini
+        case "opencode": .agentOpenCode
+        case "shell": .agentShell
+        default: .agentCustom
         }
     }
 }

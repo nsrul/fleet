@@ -5,10 +5,13 @@ import SwiftUI
 struct SidebarView: View {
     @Bindable var model: AppModel
     @Environment(\.openSettings) private var openSettings
+    @FocusState private var searchFocused: Bool
     @State private var hoveredSessionID: String?
+    @State private var searchOpen = false
+    @State private var searchText = ""
 
     private var groups: [SessionGroup] {
-        let filtered = model.filteredSessions
+        let filtered = model.filteredSessions.filter(matchesSearch)
         let grouped = Dictionary(grouping: filtered, by: \.cwd)
         return grouped.map { cwd, sessions in
             SessionGroup(
@@ -24,19 +27,40 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Color.clear.frame(height: 52)
+            toolRow
 
-            segmentedControl
+            if searchOpen {
+                searchField
+            }
+
+            newAgentControl
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
+                    Text("Agents")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 4)
+
+                    if groups.isEmpty {
+                        Text(emptyMessage)
+                            .font(Typography.captionRegular)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, 16)
+                            .padding(.top, 8)
+                    }
+
                     ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                         Text(group.title)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
-                            .padding(.leading, 24)
-                            .padding(.top, index == 0 ? 20 : 22)
+                            .padding(.leading, 16)
+                            .padding(.top, index == 0 ? 8 : 18)
                             .padding(.bottom, 6)
 
                         VStack(spacing: 2) {
@@ -60,62 +84,160 @@ struct SidebarView: View {
 
             footer
         }
-        .frame(width: 256)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Palette.sidebarSurface.ignoresSafeArea())
+        .onChange(of: searchOpen) { _, open in
+            if !open { searchText = "" }
+        }
     }
 
-    private var segmentedControl: some View {
-        HStack(spacing: 0) {
-            ForEach(SessionFilter.allCases) { filter in
-                let selected = model.filter == filter
+    private var toolRow: some View {
+        HStack(spacing: 2) {
+            Spacer(minLength: 0)
+            sidebarIconButton(
+                systemImage: "magnifyingglass",
+                help: "Search",
+                isOn: searchOpen
+            ) {
+                searchOpen.toggle()
+            }
+            filterMenu
+        }
+        .padding(.trailing, 8)
+        .frame(height: 38)
+    }
+
+    private var filterMenu: some View {
+        Menu {
+            Picker("Filter", selection: $model.filter) {
+                ForEach(SessionFilter.allCases) { item in
+                    Text(item.title).tag(item)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(model.filter == .all ? Color.secondary : Palette.accent)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.primary.opacity(model.filter == .all ? 0 : 0.08))
+                )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Filter")
+        .accessibilityLabel("Filter")
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+            TextField("Search", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(Typography.body)
+                .focused($searchFocused)
+            if !searchText.isEmpty {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        model.filter = filter
-                    }
+                    searchText = ""
                 } label: {
-                    Text("\(filter.title) \(count(for: filter))")
-                        .font(Typography.calloutMedium)
-                        .foregroundStyle(selected ? Color.primary : Color.secondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 24)
-                        .background {
-                            if selected {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(Color(nsColor: .controlBackgroundColor))
-                                    .shadow(color: .black.opacity(0.12), radius: 1.5, y: 0.5)
-                            }
-                        }
-                        .contentShape(Rectangle())
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
+                .help("Clear search")
             }
         }
-        .padding(2)
+        .padding(.horizontal, 10)
+        .frame(height: 32)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.05))
+                .fill(Color.primary.opacity(0.06))
         )
-        .frame(height: 28)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 6)
+        .onAppear { searchFocused = true }
+    }
+
+    private var newAgentControl: some View {
+        Button {
+            model.showNewAgent = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 15, weight: .regular))
+                Text("New agent")
+                    .font(.system(size: 14, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Palette.accent)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(NewAgentButtonStyle())
+        .focusEffectDisabled()
+        .padding(.horizontal, 10)
+        .padding(.top, 2)
+        .help("New agent (⌘N)")
+        .accessibilityLabel("New agent")
+    }
+
+    private func sidebarIconButton(
+        systemImage: String,
+        help: String,
+        isOn: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(isOn ? Color.primary : Color.secondary)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.primary.opacity(isOn ? 0.08 : 0))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+
+    private func matchesSearch(_ session: SessionInfo) -> Bool {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return true }
+        let title = model.displayTitle(for: session)
+        let agent = AgentCatalog.displayName(for: session.program)
+        return title.localizedStandardContains(query)
+            || agent.localizedStandardContains(query)
+            || session.cwd.localizedStandardContains(query)
+            || session.id.localizedStandardContains(query)
+    }
+
+    private var emptyMessage: String {
+        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "No matches"
+        }
+        switch model.filter {
+        case .all: return "No agents"
+        case .running: return "No agents running"
+        case .idle: return "No idle agents"
+        case .needsYou: return "Nothing needs you"
+        }
     }
 
     private var footer: some View {
         VStack(spacing: 0) {
             HorizontalDivider()
-            HStack(spacing: 14) {
-                Button {
-                    model.showNewAgent = true
-                } label: {
-                    Text("+ New agent")
-                }
-                .buttonStyle(PlainTextButtonStyle())
-
-                Text("⌘N")
-                    .font(Typography.captionRegular)
-                    .foregroundStyle(.tertiary)
-
-                Spacer(minLength: 8)
-
+            HStack {
+                Spacer(minLength: 0)
                 Button("Settings") {
                     openSettings()
                 }
@@ -128,17 +250,20 @@ struct SidebarView: View {
         }
     }
 
-    private func count(for filter: SessionFilter) -> Int {
-        switch filter {
-        case .all: return model.sessions.count
-        case .running: return model.runningCount
-        }
-    }
-
     private func projectName(for cwd: String) -> String {
         if cwd == NSHomeDirectory() { return "home" }
         let name = (cwd as NSString).lastPathComponent
         return name.isEmpty ? cwd : name
+    }
+}
+
+private struct NewAgentButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.primary.opacity(configuration.isPressed ? 0.14 : 0.08))
+            )
     }
 }
 
@@ -230,18 +355,6 @@ private struct SessionRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button("Open in First Pane") {
-                model.selectSession(session.id, in: .primary)
-            }
-            .disabled(model.primarySessionID == session.id)
-
-            Button("Open in Second Pane") {
-                model.selectSession(session.id, in: .secondary)
-            }
-            .disabled(model.secondarySessionID == session.id)
-
-            Divider()
-
             Button("Fork Agent") {
                 model.forkSession(session.id)
             }

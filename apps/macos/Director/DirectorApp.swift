@@ -48,33 +48,10 @@ struct DirectorCommands: Commands {
         }
 
         CommandMenu("Session") {
-            Button("Focus First Pane") {
+            Button("Focus Terminal") {
                 model.focusPane(.primary)
             }
             .keyboardShortcut("1", modifiers: .command)
-
-            Button("Focus Second Pane") {
-                model.focusPane(.secondary)
-            }
-            .keyboardShortcut("2", modifiers: .command)
-            .disabled(!model.isSplit)
-
-            Divider()
-
-            Button(model.isSplit ? "Unsplit" : "Split") {
-                model.toggleSplit()
-            }
-            .keyboardShortcut("\\", modifiers: .command)
-
-            Button("Stacked Layout") {
-                model.setSplitLayout(.stacked)
-                model.setSplit(true)
-            }
-
-            Button("Side-by-Side Layout") {
-                model.setSplitLayout(.sideBySide)
-                model.setSplit(true)
-            }
 
             Divider()
 
@@ -91,6 +68,11 @@ struct DirectorCommands: Commands {
 
         CommandGroup(after: .toolbar) {
             Divider()
+            Button(model.showSidebar ? "Hide Sidebar" : "Show Sidebar") {
+                model.toggleSidebar()
+            }
+            .keyboardShortcut("b", modifiers: .command)
+
             Button(model.showContext ? "Hide Context Panel" : "Show Context Panel") {
                 model.toggleContext()
             }
