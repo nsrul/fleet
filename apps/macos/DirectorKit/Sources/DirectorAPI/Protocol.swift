@@ -99,6 +99,7 @@ public enum Command: Encodable, Sendable {
     case listSessions
     case inspectSession(id: String)
     case stopSession(id: String)
+    case removeSession(id: String)
     case input(id: String, data: Data)
     case resize(id: String, size: TerminalSize)
     case attachSession(id: String)
@@ -136,6 +137,9 @@ public enum Command: Encodable, Sendable {
             try container.encode(SessionID(id: id), forKey: .params)
         case .stopSession(let id):
             try container.encode("stop_session", forKey: .command)
+            try container.encode(SessionID(id: id), forKey: .params)
+        case .removeSession(let id):
+            try container.encode("remove_session", forKey: .command)
             try container.encode(SessionID(id: id), forKey: .params)
         case .input(let id, let data):
             try container.encode("input", forKey: .command)
@@ -184,11 +188,18 @@ public struct Welcome: Equatable, Sendable {
     public let protocolVersion: UInt32
     public let daemonVersion: String
     public let engineState: String
+    public let capabilities: [String]
 
-    public init(protocolVersion: UInt32, daemonVersion: String, engineState: String) {
+    public init(
+        protocolVersion: UInt32,
+        daemonVersion: String,
+        engineState: String,
+        capabilities: [String] = []
+    ) {
         self.protocolVersion = protocolVersion
         self.daemonVersion = daemonVersion
         self.engineState = engineState
+        self.capabilities = capabilities
     }
 }
 
@@ -431,6 +442,7 @@ public enum ServerMessage: Decodable, Sendable {
         case protocolVersion = "protocol_version"
         case daemonVersion = "daemon_version"
         case engineState = "engine_state"
+        case capabilities
         case error
         case requestID = "request_id"
         case result
@@ -446,7 +458,11 @@ public enum ServerMessage: Decodable, Sendable {
                 Welcome(
                     protocolVersion: try container.decode(UInt32.self, forKey: .protocolVersion),
                     daemonVersion: try container.decode(String.self, forKey: .daemonVersion),
-                    engineState: try container.decode(String.self, forKey: .engineState)
+                    engineState: try container.decode(String.self, forKey: .engineState),
+                    capabilities: try container.decodeIfPresent(
+                        [String].self,
+                        forKey: .capabilities
+                    ) ?? []
                 )
             )
         case "rejected":

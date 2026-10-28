@@ -102,6 +102,13 @@ public actor DirectorClient {
         return exit
     }
 
+    public func removeSession(id: String) async throws {
+        let data = try await request(.removeSession(id: id))
+        guard case .acknowledged = data else {
+            throw DirectorError.unexpectedResponse("expected an acknowledgement")
+        }
+    }
+
     public func attachSession(id: String) async throws -> AttachedSession {
         let data = try await request(.attachSession(id: id))
         guard case .attached(let attached) = data else {

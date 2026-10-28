@@ -56,6 +56,14 @@ impl Engine {
         self.sessions.get(id)
     }
 
+    /// Removes an exited session from the engine.
+    pub fn remove_session(&mut self, id: &SessionId) -> Result<SessionInfo, EngineError> {
+        if self.state != EngineState::Running {
+            return Err(EngineError::Stopped);
+        }
+        self.sessions.remove(id).map_err(EngineError::from)
+    }
+
     pub fn sessions(&self) -> Vec<SessionInfo> {
         self.sessions.list()
     }
