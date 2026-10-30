@@ -139,3 +139,8 @@ cargo metadata --no-deps --format-version 1 --locked
 ```
 
 Tests cover engine shutdown, PTY session lifecycle and I/O, protocol serialization, the local API, and Unix daemon subprocess behavior: operation without a UI, clean SIGINT/SIGTERM exit, JSON logs on stderr, and invalid logging configuration. API tests exercise handshake and version checks, owner-only socket permissions, malformed and oversized frames, create/list/inspect/stop, ordered output/input/status, snapshot replay, resize, multi-client attachment, live/stale sockets, and shutdown notification. Session tests use real PTYs with `/bin/sh` and `stty`, so they do not require agent CLIs. Process tests allow up to 30 seconds for startup and shutdown to tolerate loaded CI hosts and terminate/reap children on failure. The engine's own shutdown deadline remains five seconds. Unix subprocess and local API tests are platform-gated; Windows Ctrl-C behavior, named pipes, and process-tree containment have not been validated here.
+
+## License
+
+Director is released under the [MIT License](LICENSE).
+
