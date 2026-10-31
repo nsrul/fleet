@@ -42,21 +42,22 @@ final class TerminalController: TerminalViewDelegate {
 
     @ObservationIgnored var onPresence: (() -> Void)?
     @ObservationIgnored private var lastSize: TerminalSize?
-    @ObservationIgnored private var fontSize: CGFloat
+    @ObservationIgnored private var preferences: TerminalPreferences
     @ObservationIgnored private var activityToken = 0
 
-    init(sessionID: String, fontSize: CGFloat = 16) {
+    init(sessionID: String, preferences: TerminalPreferences) {
         self.sessionID = sessionID
-        self.fontSize = fontSize
+        let preferences = preferences.clamped()
+        self.preferences = preferences
 
         var options = TerminalOptions.default
-        options.scrollback = 20_000
+        options.scrollback = preferences.scrollback
         options.termName = "xterm-256color"
-        options.cursorStyle = .blinkBlock
+        options.cursorStyle = Self.cursorStyle(for: preferences.cursorTag)
 
         let view = FleetTerminalView(
             frame: NSRect(x: 0, y: 0, width: 800, height: 480),
-            font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular),
+            font: TerminalFont.resolve(id: preferences.fontID, size: CGFloat(preferences.fontSize)),
             options: options
         )
         self.view = view
@@ -69,6 +70,13 @@ final class TerminalController: TerminalViewDelegate {
         view.selectedTextBackgroundColor = Palette.terminalSelectionNS
         view.wantsLayer = true
         view.layer?.backgroundColor = Palette.terminalNS.cgColor
+        // `.sound` is what calls the delegate, which is how a session gets marked.
+        // The beep itself follows `preferences.bellSound`.
+        view.bellStyle = .sound
+        view.optionAsMetaKey = preferences.optionIsMeta
+        if abs(preferences.lineSpacing - 1) > 0.001 {
+            view.lineSpacing = CGFloat(preferences.lineSpacing)
+        }
     }
 
     var displayTitle: String {
@@ -127,10 +135,30 @@ final class TerminalController: TerminalViewDelegate {
         }
     }
 
-    func setFontSize(_ size: CGFloat) {
-        guard size != fontSize else { return }
-        fontSize = size
-        view.font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    func apply(_ incoming: TerminalPreferences) {
+        let next = incoming.clamped()
+        let previous = preferences
+        preferences = next
+
+        if previous.fontID != next.fontID || previous.fontSize != next.fontSize {
+            view.font = TerminalFont.resolve(id: next.fontID, size: CGFloat(next.fontSize))
+        }
+        if previous.cursorTag != next.cursorTag {
+            view.setCursorStyle(Self.cursorStyle(for: next.cursorTag))
+        }
+        if abs(previous.lineSpacing - next.lineSpacing) > 0.001 {
+            view.lineSpacing = CGFloat(next.lineSpacing)
+        }
+        if previous.scrollback != next.scrollback {
+            view.changeScrollback(next.scrollback)
+        }
+        if previous.optionIsMeta != next.optionIsMeta {
+            view.optionAsMetaKey = next.optionIsMeta
+        }
+    }
+
+    private static func cursorStyle(for tag: String) -> CursorStyle {
+        CursorStyle(tagName: tag) ?? .blinkBlock
     }
 
     func update(status: SessionStatus) {
@@ -184,7 +212,9 @@ final class TerminalController: TerminalViewDelegate {
             needsAttention = true
             onPresence?()
         }
-        NSSound.beep()
+        if preferences.bellSound {
+            NSSound.beep()
+        }
     }
 
     private func markRecentlyActive() {
