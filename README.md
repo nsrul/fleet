@@ -1,6 +1,7 @@
-# Fleet
+![Fleet Banner](assets/banner.svg)
 
-A proposed desktop workspace for running and coordinating coding agents, backed by a Rust engine.
+
+Agentic Development Environment for running and coordinating coding agents, backed by a Rust engine.
 
 ## Architecture
 
