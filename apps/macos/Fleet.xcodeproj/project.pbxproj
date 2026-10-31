@@ -21,6 +21,7 @@
 		6E1A67C0F08DD0534DF37749 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913E8BFEADA4AD1C81F0C47F /* Theme.swift */; };
 		702852ACD85393DAC201EE75 /* FleetDark.icns in Resources */ = {isa = PBXBuildFile; fileRef = BE8737718697F74387370A71 /* FleetDark.icns */; };
 		70AF7FABB2160FE236EEDE25 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 91D44AA899C58CC867E91AB0 /* SwiftTerm */; };
+		83356B500F8BB1992C20FEE6 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = DF51DA43BD25101D2EF80906 /* AppIcon.icon */; };
 		B1CC79E83848B04546AF91C0 /* TerminalHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 871E4C8B27623F3D2757925B /* TerminalHostView.swift */; };
 		B4D8F15DCF28023F64E0839A /* UserNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = B58FFE1EF1BBA9D15EFFC2D0 /* UserNotice.swift */; };
 		B685083AD8536A2DF3E50E20 /* PanelLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF9999C19AD118E18E796F39 /* PanelLayout.swift */; };
@@ -56,6 +57,7 @@
 		D4C8FC928C7647044BAFEB21 /* Fleet.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Fleet.icns; sourceTree = "<group>"; };
 		DA8A45647CE4DC7AC70CDE5D /* TerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalController.swift; sourceTree = "<group>"; };
 		DB7773FB40FDCB7F750DD7EA /* TerminalAreaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAreaView.swift; sourceTree = "<group>"; };
+		DF51DA43BD25101D2EF80906 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -157,6 +159,7 @@
 		C9205E6E0665206163799DD8 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				DF51DA43BD25101D2EF80906 /* AppIcon.icon */,
 				8D86FF4284B57A36E0A5DE24 /* Assets.xcassets */,
 				D4C8FC928C7647044BAFEB21 /* Fleet.icns */,
 				BE8737718697F74387370A71 /* FleetDark.icns */,
@@ -231,6 +234,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				83356B500F8BB1992C20FEE6 /* AppIcon.icon in Resources */,
 				0D246EB71B087B1691006F35 /* Assets.xcassets in Resources */,
 				34206BC65CD9FC00F732384B /* Fleet.icns in Resources */,
 				702852ACD85393DAC201EE75 /* FleetDark.icns in Resources */,
