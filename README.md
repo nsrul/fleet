@@ -78,7 +78,7 @@ print(receive())
 
 ## macOS prototype
 
-A SwiftUI frontend lives in `apps/macos`. It connects to the daemon, shows one project with two live terminal panes, and reads git status for a context panel. Requirements, shortcuts, limitations, and recorded verification are in [`apps/macos/README.md`](apps/macos/README.md). The frontend decision is recorded in [`docs/decisions/0001-macos-frontend.md`](docs/decisions/0001-macos-frontend.md).
+A SwiftUI frontend lives in `apps/macos`. It connects to the daemon, shows one project with two live terminal panes, and reads git status for a context panel. Requirements, shortcuts, limitations, and recorded verification are in [`apps/macos/README.md`](apps/macos/README.md). The frontend decision is recorded in [`docs/decisions/0001-MACOS-FRONTEND.md`](docs/decisions/0001-MACOS-FRONTEND.md).
 
 ```sh
 apps/macos/scripts/build.sh
@@ -99,10 +99,11 @@ scripts/demo.sh     # two live agent panes
 scripts/test.sh     # Rust workspace and FleetKit tests
 scripts/verify.sh   # formatting, Clippy, tests, smoke checks, app build
 scripts/clean.sh    # remove build artifacts
+scripts/release.sh  # release app zip; optional Developer ID signing
 ```
 
 See [`scripts/README.md`](scripts/README.md) for details and environment
-variables.
+variables. The macOS release procedure is [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## Build and run the daemon
 

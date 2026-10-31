@@ -85,4 +85,5 @@ and verification commands and the full results table.
 - Add a macOS CI job once the prototype stabilizes.
 - Define terminal-state snapshots and replay in issue #5.
 - Replace ad-hoc signing with a real signing and notarization process before
-  distributing the app.
+  distributing the app. Developer ID signing for a local release zip is
+  documented in [`docs/RELEASE.md`](../RELEASE.md). Notarization is still open.

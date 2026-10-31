@@ -172,8 +172,9 @@ scroll keys or `Page Up` / `Page Down` in that state.
   working directory. It does not stage or commit.
 - "Running" is derived from session status. "Needs you" is not implemented, so
   the sidebar labels its filters "All agents" and "Running".
-- The app is not sandboxed, has no notarization or release packaging, and has no
-  macOS CI job.
+- The app is not sandboxed and has no notarization or macOS CI job.
+  [`docs/RELEASE.md`](../../docs/RELEASE.md) is the procedure for the signed
+  release zip produced by `scripts/release.sh`.
 
 ## Source layout
 
@@ -189,9 +190,9 @@ apps/macos/
     Sources/FleetAPI/    local API client and protocol types
     Sources/FleetProbe/  CLI smoke test and session helper
     Tests/FleetAPITests/ unit tests
-  scripts/                  build, run, demo, verify
+  scripts/                  build, run, demo, verify, release
   project.yml               XcodeGen source of truth
 ```
 
 The frontend decision is recorded in
-[`docs/decisions/0001-macos-frontend.md`](../../docs/decisions/0001-macos-frontend.md).
+[`docs/decisions/0001-MACOS-FRONTEND.md`](../../docs/decisions/0001-MACOS-FRONTEND.md).
