@@ -10,7 +10,9 @@ enum PanelMetrics {
 
     static let contextMin: Double = 320
     static let contextDefault: Double = 504
-    static let contextMax: Double = 640
+    static let contextMax: Double = 760
+    /// Terminal mode widens a narrower panel to this so a shell fits.
+    static let contextTerminalWidth: Double = 560
 
     static let terminalMin: Double = 320
 
@@ -140,6 +142,8 @@ struct WorkspaceColumns: View {
     @AppStorage("fleet.contextWidth") private var contextWidth = PanelMetrics.contextDefault
     @State private var sidebarOrigin: Double?
     @State private var contextOrigin: Double?
+    /// Width to restore when leaving terminal mode, if the widen was automatic.
+    @State private var widthBeforeTerminal: Double?
 
     var body: some View {
         GeometryReader { geo in
@@ -204,6 +208,7 @@ struct WorkspaceColumns: View {
                                     clearDrag()
                                 },
                                 onStep: { step in
+                                    widthBeforeTerminal = nil
                                     let resized = PanelMetrics.resizeContext(
                                         proposed: contextWidth + step,
                                         total: total,
@@ -213,7 +218,10 @@ struct WorkspaceColumns: View {
                                     if showSidebar { sidebarWidth = resized.sidebar }
                                     contextWidth = resized.context
                                 },
-                                onReset: { contextWidth = PanelMetrics.contextDefault }
+                                onReset: {
+                                    widthBeforeTerminal = nil
+                                    contextWidth = PanelMetrics.contextDefault
+                                }
                             )
                         }
                 }
@@ -234,6 +242,20 @@ struct WorkspaceColumns: View {
                 PanelMetrics.contextMax
             )
         }
+        .onChange(of: model.contextShowsTerminal) { _, showsTerminal in
+            if showsTerminal {
+                guard contextWidth < PanelMetrics.contextTerminalWidth, widthBeforeTerminal == nil else { return }
+                widthBeforeTerminal = contextWidth
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    contextWidth = PanelMetrics.contextTerminalWidth
+                }
+            } else if let remembered = widthBeforeTerminal {
+                widthBeforeTerminal = nil
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    contextWidth = remembered
+                }
+            }
+        }
     }
 
     private func resizeSidebar(by growth: Double, total: Double, showContext: Bool) {
@@ -249,11 +271,15 @@ struct WorkspaceColumns: View {
         )
         sidebarWidth = resized.sidebar
         if showContext {
+            if contextWidth != resized.context {
+                widthBeforeTerminal = nil
+            }
             contextWidth = resized.context
         }
     }
 
     private func resizeContext(by growth: Double, total: Double) {
+        widthBeforeTerminal = nil
         if contextOrigin == nil {
             sidebarOrigin = sidebarWidth
             contextOrigin = contextWidth

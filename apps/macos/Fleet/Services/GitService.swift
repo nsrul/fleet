@@ -28,6 +28,14 @@ struct GitChange: Identifiable, Equatable, Sendable {
     var isUntracked: Bool { status == "??" }
 }
 
+struct GitFileDiff: Equatable, Sendable {
+    var text: String
+    var truncated: Bool
+    var binary: Bool
+
+    static let empty = GitFileDiff(text: "", truncated: false, binary: false)
+}
+
 struct GitSnapshot: Equatable, Sendable {
     var cwd: String
     var branch: String?
@@ -115,6 +123,28 @@ enum GitService {
         }
 
         return parse(status: status.stdout, cwd: cwd, remoteURL: remoteURL, stats: stats)
+    }
+
+    /// Unified diff for one path. Exit code 1 from git means the file differs.
+    ///
+    /// Tracked files prefer the working tree, then the index. Untracked files
+    /// diff against `/dev/null`. Output is capped at 400 lines.
+    static func diff(cwd: String, path: String, status: String) -> GitFileDiff {
+        if status.contains("?") {
+            return format(runGit([
+                "-C", cwd, "diff", "--no-color", "--no-index", "--", "/dev/null", path,
+            ]))
+        }
+
+        let working = runGit(["-C", cwd, "diff", "--no-color", "--", path])
+        let workingDiff = format(working)
+        if working.exitCode == 0 || working.exitCode == 1 {
+            if workingDiff.binary || !workingDiff.text.isEmpty {
+                return workingDiff
+            }
+            return format(runGit(["-C", cwd, "diff", "--no-color", "--cached", "--", path]))
+        }
+        return workingDiff
     }
 
     static func parse(
@@ -205,6 +235,30 @@ enum GitService {
         return url
     }
 
+    private static let diffLineCap = 400
+
+    private static func format(
+        _ result: (exitCode: Int32, stdout: String, stderr: String)
+    ) -> GitFileDiff {
+        guard result.exitCode == 0 || result.exitCode == 1 else {
+            return GitFileDiff(text: "unavailable", truncated: false, binary: false)
+        }
+        let output = result.stdout
+        if output.contains("Binary files ") || output.contains("GIT binary patch") {
+            return GitFileDiff(text: "binary", truncated: false, binary: true)
+        }
+        var lines = output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        if lines.last?.isEmpty == true {
+            lines.removeLast()
+        }
+        guard lines.count > diffLineCap else {
+            return GitFileDiff(text: lines.joined(separator: "\n"), truncated: false, binary: false)
+        }
+        var kept = Array(lines.prefix(diffLineCap - 1))
+        kept.append("truncated")
+        return GitFileDiff(text: kept.joined(separator: "\n"), truncated: true, binary: false)
+    }
+
     private static func runGit(_ arguments: [String]) -> (exitCode: Int32, stdout: String, stderr: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
@@ -231,5 +285,47 @@ enum GitService {
             String(decoding: outputData, as: UTF8.self),
             String(decoding: errorData, as: UTF8.self)
         )
+    }
+}
+
+/// Which working-tree path the context panel should show.
+enum ChangeFollow {
+    /// While following, the path whose status or line counts changed the most.
+    /// While pinned, the current path when it is still in the tree.
+    static func selection(
+        previous: [GitChange],
+        next: [GitChange],
+        selected: String?,
+        following: Bool
+    ) -> String? {
+        if !following {
+            guard let selected, next.contains(where: { $0.path == selected }) else { return nil }
+            return selected
+        }
+
+        var prior: [String: GitChange] = [:]
+        prior.reserveCapacity(previous.count)
+        for change in previous {
+            prior[change.path] = change
+        }
+
+        var bestPath: String?
+        var bestDelta = -1
+        for change in next {
+            let old = prior[change.path]
+            let changed = old == nil
+                || old?.status != change.status
+                || old?.added != change.added
+                || old?.deleted != change.deleted
+            guard changed else { continue }
+            let delta = (change.added ?? 0) + (change.deleted ?? 0)
+            if delta > bestDelta {
+                bestDelta = delta
+                bestPath = change.path
+            }
+        }
+        if let bestPath { return bestPath }
+        if let selected, next.contains(where: { $0.path == selected }) { return selected }
+        return next.first?.path
     }
 }

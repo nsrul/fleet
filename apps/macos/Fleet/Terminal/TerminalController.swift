@@ -79,18 +79,27 @@ final class TerminalController: TerminalViewDelegate {
         }
     }
 
-    var displayTitle: String {
+    private static let shellNames = ["zsh", "bash", "sh", "fish", "login", "tmux"]
+
+    /// OSC title when it names the task. Shell names are not a task.
+    private var usefulTitle: String? {
         let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return sessionID }
-        // Agents commonly report a task title through OSC 0/2. Shells report
-        // their own name, which is less useful than the session identifier.
+        guard !value.isEmpty else { return nil }
         let lowered = value.lowercased()
-        let shellNames = ["zsh", "bash", "sh", "fish", "login", "tmux"]
-        if shellNames.contains(where: { lowered == $0 || lowered.hasPrefix("\($0) ") }) {
-            return sessionID
+        if Self.shellNames.contains(where: { lowered == $0 || lowered.hasPrefix("\($0) ") }) {
+            return nil
         }
         return value
     }
+
+    var displayTitle: String {
+        // Agents commonly report a task title through OSC 0/2. Shells report
+        // their own name, which is less useful than the session identifier.
+        usefulTitle ?? sessionID
+    }
+
+    /// Task title for the context panel. Nil when the terminal has no real title.
+    var taskTitle: String? { usefulTitle }
 
     var currentSize: TerminalSize? {
         let dimensions = view.terminalDimensions

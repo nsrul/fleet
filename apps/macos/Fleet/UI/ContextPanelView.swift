@@ -9,8 +9,12 @@ struct ContextPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            content
-            footer
+            HorizontalDivider()
+            if model.contextShowsTerminal {
+                ContextTerminalView(model: model)
+            } else {
+                review
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
@@ -21,168 +25,191 @@ struct ContextPanelView: View {
 
     private var session: SessionInfo? { model.contextSession }
     private var snapshot: GitSnapshot? { model.contextSnapshot }
-    private var hasChanges: Bool { !(snapshot?.changes.isEmpty ?? true) }
 
-    @ViewBuilder
     private var header: some View {
-        if hasChanges {
-            tabs
-            summaryBlock
-        } else {
-            simpleHeader
-        }
-    }
-
-    private var tabs: some View {
-        HStack(spacing: 4) {
-            tab(title: "Changes", count: snapshot?.changes.count ?? 0, selected: true)
-            tab(title: "Artifacts", count: 0, selected: false)
-            Spacer()
-        }
-        .padding(.horizontal, 20)
-        .frame(height: WorkspaceChrome.barHeight)
-    }
-
-    private func tab(title: String, count: Int, selected: Bool) -> some View {
-        HStack(spacing: 5) {
-            Text(title)
-                .font(Typography.calloutMedium)
-            Text("\(count)")
-                .font(Typography.callout)
-                .foregroundStyle(selected ? Color.secondary : Color.secondary.opacity(0.55))
-        }
-        .foregroundStyle(selected ? Color.primary : Color.secondary)
-        .padding(.horizontal, 9)
-        .frame(height: 28)
-        .background {
-            if selected {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-            }
-        }
-        .contentShape(Rectangle())
-    }
-
-    private var simpleHeader: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(branchTitle)
-                .font(Typography.monoBranch)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-
-            Spacer(minLength: 8)
-
-            Text(cleanSummary)
-                .font(Typography.callout)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 20)
-        .frame(height: WorkspaceChrome.barHeight)
-    }
-
-    private var summaryBlock: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(branchTitle)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Text(headerTitle)
                     .font(Typography.monoBranch)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
+                    .truncationMode(.middle)
 
                 Spacer(minLength: 8)
 
-                Text(snapshot?.diffSummary ?? "")
-                    .font(Typography.callout)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-            }
+                headerSummary
 
-            Text("Uncommitted · based on \(snapshot?.baseBranch ?? "main")")
-                .font(Typography.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                if model.contextShowsTerminal {
+                    terminalActions
+                } else {
+                    reviewActions
+                }
+            }
+            .frame(minHeight: WorkspaceChrome.barHeight)
+
+            if model.contextShowsTerminal, let agent = driftedAgentDirectory {
+                HStack(spacing: 8) {
+                    Text(model.abbreviate(agent))
+                        .font(Typography.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("Here") {
+                        model.jumpScratchToAgent()
+                    }
+                    .buttonStyle(PlainTextButtonStyle())
+                    Spacer(minLength: 0)
+                }
+                .padding(.bottom, 6)
+            } else if !model.contextShowsTerminal, let task = agentTaskTitle {
+                Text(task)
+                    .font(Typography.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.bottom, 6)
+            }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 16)
     }
 
     @ViewBuilder
-    private var content: some View {
-        if let session, let snapshot {
+    private var headerSummary: some View {
+        if !model.contextShowsTerminal, let snapshot {
             if let error = snapshot.error {
-                emptyState(
-                    title: "Not a git repository",
-                    subtitle: error,
-                    symbol: "questionmark.folder"
-                )
-                .overlay(alignment: .bottom) {
-                    Text(model.abbreviate(session.cwd))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .padding(.bottom, 24)
+                Text(repositoryStatus(error))
+                    .font(Typography.callout)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .help(repositoryHelp(error))
+            } else if snapshot.additions + snapshot.deletions > 0 {
+                HStack(spacing: 6) {
+                    Text("+\(snapshot.additions)")
+                        .foregroundStyle(Palette.success)
+                    Text("−\(snapshot.deletions)")
+                        .foregroundStyle(Palette.error)
                 }
-            } else if snapshot.changes.isEmpty {
-                emptyState(
-                    title: "No changes yet",
-                    subtitle: "Files \(AgentCatalog.displayName(for: session.program)) edits will appear here.",
-                    symbol: "checkmark.circle"
-                )
-            } else {
-                changes(snapshot, session: session)
-            }
-        } else if session != nil {
-            emptyState(
-                title: "Reading repository…",
-                subtitle: "Collecting branch and working tree state.",
-                symbol: "arrow.triangle.2.circlepath"
-            )
-        } else {
-            emptyState(
-                title: "No agent selected",
-                subtitle: "Choose an agent from the sidebar.",
-                symbol: "sidebar.left"
-            )
-        }
-    }
-
-    private func emptyState(title: String, subtitle: String, symbol: String) -> some View {
-        VStack(spacing: 7) {
-            Image(systemName: symbol)
-                .font(.system(size: 20, weight: .regular))
-                .foregroundStyle(.tertiary)
-                .padding(.bottom, 2)
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.primary)
-            Text(subtitle)
                 .font(Typography.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 300)
+                .lineLimit(1)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(20)
     }
 
-    private func changes(_ snapshot: GitSnapshot, session: SessionInfo) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(snapshot.changes) { change in
-                    changeRow(change, cwd: session.cwd)
+    @ViewBuilder
+    private var reviewActions: some View {
+        if !model.contextFollowsEdits {
+            Button("Follow") {
+                model.contextFollowsEdits = true
+                model.contextSelection = model.contextLatestPath
+            }
+            .buttonStyle(PlainTextButtonStyle())
+        }
+        headerAction("Terminal", help: "Open a shell in this panel") {
+            model.contextShowsTerminal = true
+        }
+    }
+
+    @ViewBuilder
+    private var terminalActions: some View {
+        headerAction("Changes", help: "Show the files and diff") {
+            model.contextShowsTerminal = false
+        }
+        if model.scratchSession?.isRunning == true {
+            headerAction("Move to middle", help: "Move this shell into the middle pane and the sidebar") {
+                model.promoteScratch()
+            }
+        }
+    }
+
+    private var headerTitle: String {
+        if model.contextShowsTerminal {
+            return model.abbreviate(shellDirectory)
+        }
+        guard let session else { return "—" }
+        if let snapshot {
+            if snapshot.error != nil {
+                return model.abbreviate(session.cwd)
+            }
+            if let branch = snapshot.branch, !branch.isEmpty {
+                return branch
+            }
+            return "HEAD"
+        }
+        return model.abbreviate(session.cwd)
+    }
+
+    /// OSC title of the focused agent, when it is a task rather than a shell name.
+    private var agentTaskTitle: String? {
+        guard let id = session?.id else { return nil }
+        return model.existingController(for: id)?.taskTitle
+    }
+
+    private var shellDirectory: String {
+        if let scratch = model.scratchSession {
+            let live = model.existingController(for: scratch.id)?.cwd
+            let raw = (live?.isEmpty == false) ? live ?? scratch.cwd : scratch.cwd
+            return AppModel.normalizeDirectory(raw)
+        }
+        if let cwd = session?.cwd {
+            return AppModel.normalizeDirectory(cwd)
+        }
+        return AppModel.normalizeDirectory(AppModel.defaultWorkingDirectory)
+    }
+
+    /// The focused agent's directory when the panel shell is somewhere else.
+    private var driftedAgentDirectory: String? {
+        guard model.scratchSession?.isRunning == true, let cwd = session?.cwd else { return nil }
+        let agent = AppModel.normalizeDirectory(cwd)
+        guard agent != shellDirectory else { return nil }
+        return agent
+    }
+
+    @ViewBuilder
+    private var review: some View {
+        if let session, let snapshot, snapshot.error == nil, !snapshot.changes.isEmpty {
+            GeometryReader { geo in
+                let selected = snapshot.changes.first { $0.path == model.contextSelection }
+                VStack(spacing: 0) {
+                    if selected == nil {
+                        ScrollView {
+                            rows(snapshot, cwd: session.cwd)
+                        }
+                        .scrollIndicators(.hidden)
+                        .frame(maxHeight: .infinity)
+                    } else if let selected {
+                        BoundedScroll(maxHeight: geo.size.height * 0.4) {
+                            rows(snapshot, cwd: session.cwd)
+                        }
+                        HorizontalDivider()
+                        ContextDiffView(
+                            model: model,
+                            cwd: session.cwd,
+                            path: selected.path,
+                            status: selected.status
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 10)
+        } else {
+            Spacer(minLength: 0)
         }
-        .scrollIndicators(.hidden)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func rows(_ snapshot: GitSnapshot, cwd: String) -> some View {
+        LazyVStack(spacing: 0) {
+            ForEach(snapshot.changes) { change in
+                changeRow(change, cwd: cwd)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
     }
 
     private func changeRow(_ change: GitChange, cwd: String) -> some View {
-        Button {
-            open(change, cwd: cwd)
+        let selected = model.contextSelection == change.path
+        return Button {
+            model.contextFollowsEdits = false
+            model.contextSelection = change.path
         } label: {
             HStack(spacing: 10) {
                 Text(change.label)
@@ -213,13 +240,13 @@ struct ContextPanelView: View {
             .frame(height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(hoveredChangeID == change.id ? 0.05 : 0))
+                    .fill(Color.primary.opacity(selected ? 0.08 : (hoveredChangeID == change.id ? 0.05 : 0)))
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            hoveredChangeID = hovering ? change.id : nil
+            hoveredChangeID = hovering ? change.id : (hoveredChangeID == change.id ? nil : hoveredChangeID)
         }
         .contextMenu {
             Button("Reveal in Finder") {
@@ -228,76 +255,36 @@ struct ContextPanelView: View {
             Button("Copy Path") {
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
-                pasteboard.setString(change.path, forType: .string)
+                pasteboard.setString(AppModel.absolutePath(cwd, change.path), forType: .string)
             }
         }
     }
 
-    private var footer: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Button("Link issue") {
-                    if let url = issueURL {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                .buttonStyle(PlainTextButtonStyle())
-                .disabled(issueURL == nil)
-
-                Spacer()
-
-                Button {
-                    model.refreshGitNow()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 9, weight: .semibold))
-                        Text("Refresh")
-                    }
-                    .font(Typography.captionRegular)
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 20)
-            .frame(height: 52)
-        }
+    private func repositoryStatus(_ error: String) -> String {
+        let lowered = error.lowercased()
+        if lowered.contains("not found") { return "missing" }
+        return "no repository"
     }
 
-    private var branchTitle: String {
-        guard let snapshot, let branch = snapshot.branch else { return "—" }
-        if !snapshot.changes.isEmpty, let base = snapshot.baseBranch, base != branch {
-            return "\(branch) → \(base)"
-        }
-        return branch
+    private func repositoryHelp(_ error: String) -> String {
+        let lowered = error.lowercased()
+        if lowered.contains("not found") { return "That folder is not on disk" }
+        return "This folder is not a git repository"
     }
 
-    private var cleanSummary: String {
-        guard let snapshot, snapshot.error == nil else {
-            return "not a repository"
-        }
-        if let base = snapshot.baseBranch, base != snapshot.branch {
-            return "from \(base) · clean"
-        }
-        return "clean"
-    }
-
-    private var issueURL: URL? {
-        guard let remote = snapshot?.remoteURL else { return nil }
-        return remote.appendingPathComponent("issues/new")
-    }
-
-    private func open(_ change: GitChange, cwd: String) {
-        let url = URL(fileURLWithPath: cwd).appendingPathComponent(change.path)
-        if FileManager.default.fileExists(atPath: url.path) {
-            NSWorkspace.shared.open(url)
-        } else {
-            reveal(change, cwd: cwd)
-        }
+    private func headerAction(
+        _ title: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(title, action: action)
+            .buttonStyle(HeaderActionStyle())
+            .help(help)
+            .accessibilityLabel(help)
     }
 
     private func reveal(_ change: GitChange, cwd: String) {
-        let url = URL(fileURLWithPath: cwd).appendingPathComponent(change.path)
+        let url = URL(fileURLWithPath: AppModel.absolutePath(cwd, change.path))
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
@@ -308,5 +295,49 @@ struct ContextPanelView: View {
         case "R", "C": return Palette.accent
         default: return Palette.attention
         }
+    }
+}
+
+/// Scrolls a short list at its content height, and caps a long one.
+private struct BoundedScroll<Content: View>: View {
+    var maxHeight: CGFloat
+    @ViewBuilder var content: () -> Content
+    @State private var contentHeight: CGFloat = 0
+
+    var body: some View {
+        ScrollView {
+            content()
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: ContentHeightKey.self, value: proxy.size.height)
+                    }
+                }
+        }
+        .scrollIndicators(.hidden)
+        .frame(height: contentHeight > 1 ? min(contentHeight, maxHeight) : nil)
+        .frame(maxHeight: maxHeight)
+        .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
+    }
+}
+
+private struct HeaderActionStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Typography.calloutMedium)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 9)
+            .frame(height: 24)
+            .background(
+                RoundedRectangle(cornerRadius: WorkspaceChrome.controlRadius, style: .continuous)
+                    .fill(Color.primary.opacity(configuration.isPressed ? 0.14 : 0.08))
+            )
+            .contentShape(Rectangle())
+    }
+}
+
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
