@@ -94,6 +94,7 @@ Root-level scripts cover the common development flows:
 ```sh
 scripts/dev.sh      # build and launch Fleet
 scripts/build.sh    # build the daemon and app
+scripts/install.sh  # replace older installs with a release build from this checkout
 scripts/demo.sh     # two live agent panes
 scripts/test.sh     # Rust workspace and FleetKit tests
 scripts/verify.sh   # formatting, Clippy, tests, smoke checks, app build
