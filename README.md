@@ -1,3 +1,5 @@
+![Fleet. Agents in formation.](assets/banner.svg)
+
 # Fleet
 
 A proposed desktop workspace for running and coordinating coding agents, backed by a Rust engine.
