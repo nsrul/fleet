@@ -204,6 +204,30 @@ final class AppModel {
     var errorNotice: UserNotice?
     var isStartingDaemon = false
     var gitSnapshots: [String: GitSnapshot] = [:]
+    /// Path pinned in the context panel. Nil shows the file list without a diff.
+    var contextSelection: String?
+    /// When true, the panel selects the file the latest refresh says changed most.
+    var contextFollowsEdits = true
+    /// Path follow would select, including while another file is pinned.
+    var contextLatestPath: String?
+    /// Review is the default. Terminal is the panel's own shell.
+    var contextShowsTerminal = false
+    /// Bumped when the focused session's snapshot is replaced, so the diff reloads.
+    var contextRevision = 0
+    /// Shell owned by the context panel. It stays out of the sidebar until promoted.
+    var scratchSession: SessionInfo?
+    /// Id of that shell. Persisted so a relaunch keeps hiding it.
+    /// Cleared on promote, which is what lets that session stay in the sidebar.
+    var panelScratchID: String? {
+        didSet {
+            guard panelScratchID != oldValue else { return }
+            if let panelScratchID {
+                UserDefaults.standard.set(panelScratchID, forKey: Self.panelScratchKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.panelScratchKey)
+            }
+        }
+    }
     var terminal: TerminalPreferences = .standard {
         didSet {
             let clamped = terminal.clamped()
@@ -243,6 +267,8 @@ final class AppModel {
     @ObservationIgnored private var client: FleetClient?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var gitTask: Task<Void, Never>?
+    @ObservationIgnored private var contextRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var scratchCreateTask: Task<Void, Never>?
     @ObservationIgnored private var inputPumpTask: Task<Void, Never>?
     @ObservationIgnored private var inputBuffers: [String: Data] = [:]
     /// Sessions whose input the daemon has already rejected as closed or missing.
@@ -272,6 +298,7 @@ final class AppModel {
     private static let defaultSplitKey = "fleet.defaultSplitLayout"
     private static let confirmStopKey = "fleet.confirmStop"
     private static let pinnedDirectoryKey = "fleet.pinnedWorkingDirectory"
+    private static let panelScratchKey = "fleet.panelScratchID"
 
     init() {
         let defaults = UserDefaults.standard
@@ -295,6 +322,9 @@ final class AppModel {
         }
         confirmStop = defaults.object(forKey: Self.confirmStopKey) as? Bool ?? true
         pinnedWorkingDirectory = defaults.string(forKey: Self.pinnedDirectoryKey) ?? ""
+        if let stored = defaults.string(forKey: Self.panelScratchKey), !stored.isEmpty {
+            panelScratchID = stored
+        }
     }
 
     private static func loadTerminal(from defaults: UserDefaults) -> TerminalPreferences {
@@ -344,7 +374,7 @@ final class AppModel {
     var secondarySession: SessionInfo? { session(for: .secondary) }
 
     var filteredSessions: [SessionInfo] {
-        sessions.filter { matches($0, filter: filter) }
+        sessions.filter { $0.id != panelScratchID && matches($0, filter: filter) }
     }
 
     func matches(_ session: SessionInfo, filter: SessionFilter) -> Bool {
@@ -373,6 +403,7 @@ final class AppModel {
     }
 
     func noteSessionActivity(_ sessionID: String, active: Bool, needsAttention: Bool) {
+        let becameActive = active && !activeSessionIDs.contains(sessionID)
         if active {
             activeSessionIDs.insert(sessionID)
         } else {
@@ -382,6 +413,9 @@ final class AppModel {
             attentionSessionIDs.insert(sessionID)
         } else {
             attentionSessionIDs.remove(sessionID)
+        }
+        if becameActive, sessionID == focusedSession?.id, sessionID != panelScratchID {
+            scheduleContextRefresh()
         }
     }
 
@@ -655,6 +689,17 @@ final class AppModel {
 
     private func updateStatus(_ status: SessionStatus, for sessionID: String) {
         controllers[sessionID]?.update(status: status)
+        if scratchSession?.id == sessionID, let old = scratchSession {
+            scratchSession = SessionInfo(
+                id: old.id,
+                pid: old.pid,
+                program: old.program,
+                cwd: old.cwd,
+                size: old.size,
+                status: status
+            )
+            return
+        }
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         let old = sessions[index]
         sessions[index] = SessionInfo(
@@ -668,6 +713,10 @@ final class AppModel {
     }
 
     private func updateMetadata(_ info: SessionInfo) {
+        if scratchSession?.id == info.id {
+            scratchSession = info
+            return
+        }
         guard let index = sessions.firstIndex(where: { $0.id == info.id }) else { return }
         sessions[index] = info
     }
@@ -679,7 +728,16 @@ final class AppModel {
             throw FleetError.daemonUnavailable("Not connected to the daemon.")
         }
         let list = try await client.listSessions()
-        sessions = list.sorted(by: sessionSort)
+        if let scratchID = panelScratchID {
+            if let found = list.first(where: { $0.id == scratchID }) {
+                scratchSession = found
+            } else {
+                scratchSession = nil
+                panelScratchID = nil
+            }
+        }
+        let hidden = panelScratchID
+        sessions = list.filter { $0.id != hidden }.sorted(by: sessionSort)
         let ids = Set(sessions.map(\.id))
         pruneSessionNames(keeping: ids)
         inputMutedSessionIDs.subtract(sessions.filter(\.isRunning).map(\.id))
@@ -1023,7 +1081,9 @@ final class AppModel {
     private func uniqueSessionID(_ raw: String) -> String {
         let base = Self.slug(raw)
 
-        let used = Set(sessions.map(\.id))
+        var used = Set(sessions.map(\.id))
+        if let id = scratchSession?.id { used.insert(id) }
+        if let id = panelScratchID { used.insert(id) }
         if !used.contains(base) { return base }
         var suffix = 2
         while used.contains("\(base)-\(suffix)") { suffix += 1 }
@@ -1045,6 +1105,8 @@ final class AppModel {
         }
         controller.onFocus = { [weak self] in
             guard let self else { return }
+            // The panel shell takes the keyboard without becoming the middle pane.
+            if sessionID == self.panelScratchID { return }
             let slot: PaneSlot = (self.isSplit && self.secondarySessionID == sessionID)
                 ? .secondary
                 : .primary
@@ -1065,6 +1127,11 @@ final class AppModel {
         return controller
     }
 
+    /// The live controller when one already exists. Does not create one.
+    func existingController(for sessionID: String) -> TerminalController? {
+        controllers[sessionID]
+    }
+
     private func attachVisiblePanes() async {
         for slot in [PaneSlot.primary, .secondary] {
             if slot == .secondary, !isSplit { continue }
@@ -1078,7 +1145,8 @@ final class AppModel {
         guard let client else { return }
         guard !attachedSessionIDs.contains(sessionID) else { return }
         guard !attachingSessionIDs.contains(sessionID) else { return }
-        guard sessions.contains(where: { $0.id == sessionID }) else { return }
+        let known = sessions.contains(where: { $0.id == sessionID }) || scratchSession?.id == sessionID
+        guard known else { return }
 
         attachingSessionIDs.insert(sessionID)
         defer { attachingSessionIDs.remove(sessionID) }
@@ -1220,10 +1288,211 @@ final class AppModel {
 
     private func refreshGit(cwd: String) async {
         guard !cwd.isEmpty else { return }
+        let previous = gitSnapshots[cwd]?.changes ?? []
         let snapshot = await Task.detached(priority: .utility) {
             GitService.snapshot(cwd: cwd)
         }.value
         gitSnapshots[cwd] = snapshot
+        guard cwd == contextSession?.cwd else { return }
+        contextRevision += 1
+        let latest = ChangeFollow.selection(
+            previous: previous,
+            next: snapshot.changes,
+            selected: contextSelection,
+            following: true
+        )
+        contextLatestPath = latest
+        if contextFollowsEdits {
+            contextSelection = latest
+        } else {
+            contextSelection = ChangeFollow.selection(
+                previous: previous,
+                next: snapshot.changes,
+                selected: contextSelection,
+                following: false
+            )
+        }
+    }
+
+    private func scheduleContextRefresh() {
+        contextRefreshTask?.cancel()
+        contextRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, let self else { return }
+            await self.refreshGitForFocusedSession()
+        }
+    }
+
+    // MARK: - Panel shell
+
+    /// Opens the panel shell the first time. An exited shell stays exited.
+    func openScratchTerminal() async {
+        guard scratchSession == nil else { return }
+        await createScratch(cwd: scratchDirectory(replacing: nil))
+    }
+
+    /// Replaces an exited panel shell. Starts in the focused agent's directory.
+    func newScratchShell() async {
+        let previous = scratchSession
+        let cwd = scratchDirectory(replacing: previous)
+        if let previous {
+            await discardScratch(previous)
+        }
+        await createScratch(cwd: cwd)
+    }
+
+    /// Focuses the panel shell and runs Helix on the file. The click is the confirmation.
+    func editInScratch(_ path: String) async {
+        contextShowsTerminal = true
+        if scratchSession?.isRunning == true {
+            await openScratchTerminal()
+        } else {
+            await newScratchShell()
+        }
+        guard let session = scratchSession, session.isRunning else { return }
+        await attachIfNeeded(session.id)
+        guard attachedSessionIDs.contains(session.id) else { return }
+        let base = focusedSession?.cwd ?? session.cwd
+        let absolute = Self.absolutePath(base, path)
+        enqueueInput(Data("hx -- \(Self.shellQuote(absolute))\n".utf8), for: session.id)
+        controller(for: session.id).focus()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard let self, self.scratchSession?.id == session.id else { return }
+            self.controller(for: session.id).focus()
+        }
+    }
+
+    /// Sends the panel shell to the focused agent's directory.
+    func jumpScratchToAgent() {
+        guard let session = scratchSession, session.isRunning else { return }
+        guard let cwd = focusedSession?.cwd, Self.directoryExists(cwd) else { return }
+        enqueueInput(Data("cd \(Self.shellQuote(cwd))\n".utf8), for: session.id)
+    }
+
+    /// Moves the panel shell into the sidebar and selects it in the middle pane.
+    func promoteScratch() {
+        guard let session = scratchSession, session.isRunning else { return }
+        scratchSession = nil
+        panelScratchID = nil
+        if sessionNames[session.id] == nil {
+            sessionNames[session.id] = "Shell"
+        }
+        if !sessions.contains(where: { $0.id == session.id }) {
+            sessions.append(session)
+            sessions.sort(by: sessionSort)
+        }
+        contextShowsTerminal = false
+        let sessionID = session.id
+        Task { @MainActor in
+            await Task.yield()
+            self.selectSession(sessionID)
+        }
+    }
+
+    static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    static func normalizeDirectory(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("file:") {
+            if let url = URL(string: value), url.isFileURL {
+                value = url.path
+            } else if let range = value.range(of: "file://") {
+                let rest = value[range.upperBound...]
+                if let slash = rest.firstIndex(of: "/") {
+                    value = String(rest[slash...])
+                }
+            }
+        }
+        if value.count > 1, value.hasSuffix("/") {
+            value.removeLast()
+        }
+        return value
+    }
+
+    static func absolutePath(_ cwd: String, _ relative: String) -> String {
+        if relative.hasPrefix("/") { return relative }
+        return URL(fileURLWithPath: cwd, isDirectory: true)
+            .appendingPathComponent(relative)
+            .standardizedFileURL
+            .path
+    }
+
+    private func scratchDirectory(replacing previous: SessionInfo?) -> String {
+        if let cwd = focusedSession?.cwd, Self.directoryExists(cwd) { return cwd }
+        if let cwd = previous?.cwd, Self.directoryExists(cwd) { return cwd }
+        return Self.defaultWorkingDirectory
+    }
+
+    private func createScratch(cwd: String) async {
+        if scratchSession != nil { return }
+        if let existing = scratchCreateTask {
+            await existing.value
+            return
+        }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.createScratchNow(cwd: cwd)
+        }
+        scratchCreateTask = task
+        await task.value
+        scratchCreateTask = nil
+    }
+
+    private func createScratchNow(cwd: String) async {
+        guard scratchSession == nil, let client else { return }
+        let directory = Self.directoryExists(cwd) ? cwd : Self.defaultWorkingDirectory
+        let id = nextScratchID()
+        let spec = CreateSession(
+            id: id,
+            program: "/bin/zsh",
+            args: ["-l"],
+            cwd: directory,
+            env: [
+                "TERM": "xterm-256color",
+                "COLORTERM": "truecolor",
+            ],
+            size: TerminalSize(rows: 24, cols: 80)
+        )
+        do {
+            let session = try await client.createSession(spec)
+            panelScratchID = session.id
+            scratchSession = session
+            await attachIfNeeded(session.id)
+        } catch {
+            showNotice(notice(for: error, action: .create, sessionID: id))
+        }
+    }
+
+    private func nextScratchID() -> String {
+        var used = Set(sessions.map(\.id))
+        if let id = scratchSession?.id { used.insert(id) }
+        if let id = panelScratchID { used.insert(id) }
+        let base = "fleet-scratch"
+        if !used.contains(base) { return base }
+        var suffix = 2
+        while used.contains("\(base)-\(suffix)") { suffix += 1 }
+        return "\(base)-\(suffix)"
+    }
+
+    private func discardScratch(_ session: SessionInfo) async {
+        if let client {
+            if attachedSessionIDs.contains(session.id) {
+                try? await client.detachSession(id: session.id)
+            }
+            try? await client.removeSession(id: session.id)
+        }
+        attachedSessionIDs.remove(session.id)
+        attachingSessionIDs.remove(session.id)
+        controllers.removeValue(forKey: session.id)
+        if scratchSession?.id == session.id {
+            scratchSession = nil
+        }
+        if panelScratchID == session.id {
+            panelScratchID = nil
+        }
     }
 
     // MARK: - Errors

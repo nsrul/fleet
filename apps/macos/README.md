@@ -151,8 +151,8 @@ scroll keys or `Page Up` / `Page Down` in that state.
   a daemon status footer.
 - Stacked or side-by-side terminal panes with session metadata, focus, Split,
   Fork, and status bars.
-- 504 pt context panel with branch and working-tree changes read from git, plus
-  Changes/Artifacts tabs.
+- Context panel that follows the focused agent's working tree, shows the diff
+  for the file the agent just changed, and can open a shell for Helix.
 - New-agent sheet with agent presets, working directory, and optional name.
 - Settings for appearance, terminal font, cursor, spacing, and scrollback,
   the launch split, stop confirmation, the new-agent folder, the socket path,
@@ -168,8 +168,8 @@ scroll keys or `Page Up` / `Page Down` in that state.
   after reconnecting or relaunching.
 - Fork starts a new process with the same program and working directory; it does
   not fork the agent's conversation.
-- The context panel reads git status for the selected session's working
-  directory. It does not stage, commit, or diff file contents.
+- The context panel reads git status and file diffs for the selected session's
+  working directory. It does not stage or commit.
 - "Running" is derived from session status. "Needs you" is not implemented, so
   the sidebar labels its filters "All agents" and "Running".
 - The app is not sandboxed, has no notarization or release packaging, and has no
