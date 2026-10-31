@@ -113,12 +113,12 @@ scripts/release.sh --help
 3. When `--sign` is not `-`, require that identity in the keychain.
 4. Build `target/release/fleet-daemon` with `cargo build -p fleet-daemon --release --locked`.
 5. Regenerate the Xcode project when `xcodegen` is on `PATH`.
-6. Build the Release configuration into `apps/macos/.build` with code signing turned off. The Copy fleet-daemon build phase then puts `target/release/fleet-daemon` in the bundle before anything is signed.
+6. Build the Release configuration into `apps/macos/.build` with code signing turned off. `ARCHS` is the daemon binary's architecture (`lipo -archs`), and `ONLY_ACTIVE_ARCH` is `YES`. Cargo builds `fleet-daemon` for the host, which on this Mac is `arm64`. Xcode's default Release build is universal (`x86_64` and `arm64`); that Intel slice was not tested and would not match the daemon. The Copy fleet-daemon build phase then puts `target/release/fleet-daemon` in the bundle before anything is signed.
 7. Require `Fleet.app` and `Contents/Resources/fleet-daemon`. Require the bundled daemon to be byte-identical to `target/release/fleet-daemon`. Require the built short version to match the workspace version.
 8. Sign inside out. Nested Mach-O files under `Contents/Frameworks` are signed first, then each `.framework` bundle, then other nested Mach-O files (including `Contents/Resources/fleet-daemon`), then `Fleet.app`. The main executable is sealed with the app bundle.
 9. Ad-hoc signing uses `codesign --sign -`. A Developer ID uses `--timestamp --options runtime` and that identity.
 10. Run `codesign --verify --strict` on the bundled daemon and on the app.
-11. Name the zip from the version and the architectures reported by `lipo -archs`. On Apple Silicon that is `dist/Fleet-0.1.0-macos-arm64.zip`. Write a SHA-256 checksum beside it.
+11. Name the zip from the version and the architectures reported by `lipo -archs` on the built app. With the architecture pin above, the 0.1.0 Apple Silicon archive is `dist/Fleet-0.1.0-macos-arm64.zip`. Write a SHA-256 checksum beside it.
 
 The built app remains at:
 
@@ -142,10 +142,13 @@ ditto -x -k dist/Fleet-0.1.0-macos-arm64.zip /tmp/fleet-release
 codesign --verify --strict --verbose=2 /tmp/fleet-release/Fleet.app
 codesign --verify --strict --verbose=2 /tmp/fleet-release/Fleet.app/Contents/Resources/fleet-daemon
 /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /tmp/fleet-release/Fleet.app/Contents/Info.plist
-cmp -s target/release/fleet-daemon /tmp/fleet-release/Fleet.app/Contents/Resources/fleet-daemon
+lipo -archs /tmp/fleet-release/Fleet.app/Contents/MacOS/Fleet
+lipo -archs /tmp/fleet-release/Fleet.app/Contents/Resources/fleet-daemon
 ```
 
-`CFBundleShortVersionString` must print `0.1.0`. `cmp` must exit 0.
+`CFBundleShortVersionString` must print `0.1.0`. Both `lipo` lines must be the same architecture. For 0.1.0 that is `arm64`.
+
+Do not `cmp` the expanded daemon to `target/release/fleet-daemon`. The script does that before signing. `codesign` then writes the signature into the bundled daemon, so the bytes differ.
 
 To see which identity signed a Developer ID build:
 
@@ -230,9 +233,9 @@ ditto -x -k Fleet-0.1.0-macos-arm64.zip .
 codesign --verify --strict --verbose=2 Fleet.app
 ```
 
-On Apple Silicon the assets are `dist/Fleet-0.1.0-macos-arm64.zip` and
-`dist/Fleet-0.1.0-macos-arm64.zip.sha256`. Substitute the architecture that
-`lipo` printed if it is different.
+Upload the zip path the script prints, and the `.sha256` file beside it. For
+this 0.1.0 Apple Silicon build those are `dist/Fleet-0.1.0-macos-arm64.zip`
+and `dist/Fleet-0.1.0-macos-arm64.zip.sha256`.
 
 ```sh
 gh release create 0.1.0 \

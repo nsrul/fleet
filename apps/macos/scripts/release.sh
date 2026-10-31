@@ -125,6 +125,10 @@ fi
 
 echo
 echo "==> Building Release Fleet.app"
+# The daemon is the host cargo binary, one architecture. Xcode's default
+# Release ARCHS is a universal slice, which would ship an untested Intel app
+# next to an arm64 daemon. Build the app for the daemon's architectures only.
+DAEMON_ARCHS="$(lipo -archs "$DAEMON")"
 # Sign after the bundled daemon is copied so the identity covers the helper.
 xcodebuild \
   -project "$APP_DIR/Fleet.xcodeproj" \
@@ -134,6 +138,8 @@ xcodebuild \
   -skipPackagePluginValidation \
   -skipMacroValidation \
   build \
+  ARCHS="$DAEMON_ARCHS" \
+  ONLY_ACTIVE_ARCH=YES \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO
 
