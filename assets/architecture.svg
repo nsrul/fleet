@@ -1,0 +1,162 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1150" viewBox="0 0 1440 1150" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+<rect width="1440" height="1150" rx="24" fill="#0B1020"/>
+
+<text x="60" y="50" font-size="22" font-weight="700" fill="#FFFFFF">Fleet architecture</text>
+
+<!-- daemon container -->
+<rect x="525" y="76" width="390" height="724" rx="20" fill="#FFFFFF" fill-opacity="0.03" stroke="#FF1493" stroke-opacity="0.45" stroke-width="1.5" stroke-dasharray="7 5"/>
+<rect x="545" y="91" width="262" height="24" rx="12" fill="#FF1493" fill-opacity="0.14" stroke="#FF1493" stroke-opacity="0.6"/>
+<text x="676" y="107.5" font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="12" font-weight="700" fill="#FF1493" text-anchor="middle">Rust daemon · independent process</text>
+
+<!-- ========== ARROWS ========== -->
+<g stroke-width="2" fill="none">
+<!-- Desktop <-> API -->
+<path d="M340 160 H550" stroke="#0EA5E9"/>
+<path d="M560 196 H350" stroke="#FF1493" stroke-dasharray="6 5"/>
+<!-- CLI -> API -->
+<path d="M1100 178 H890" stroke="#FFFFFF" stroke-opacity="0.55"/>
+<!-- API <-> Engine -->
+<path d="M705 236 V390" stroke="#FFFFFF" stroke-opacity="0.8" stroke-dasharray="6 5"/>
+<path d="M745 400 V246" stroke="#FF1493" stroke-dasharray="6 5"/>
+<!-- Engine -> Git, Persistence -->
+<path d="M560 458 H350" stroke="#FFFFFF" stroke-opacity="0.55"/>
+<path d="M880 458 H1090" stroke="#FFFFFF" stroke-opacity="0.55"/>
+<!-- Engine <-> PTY -->
+<path d="M705 516 V640" stroke="#0EA5E9"/>
+<path d="M745 650 V526" stroke="#FF1493" stroke-dasharray="6 5"/>
+<!-- PTY <-> Dev -->
+<path d="M560 690 H350" stroke="#FFFFFF" stroke-opacity="0.55"/>
+<path d="M340 726 H550" stroke="#FF1493" stroke-dasharray="6 5"/>
+<!-- PTY <-> Agent CLIs -->
+<path d="M705 766 V910" stroke="#0EA5E9"/>
+<path d="M745 920 V776" stroke="#FF1493" stroke-dasharray="6 5"/>
+<!-- CLIs <-> Model -->
+<path d="M880 958 H1090" stroke="#FFFFFF" stroke-opacity="0.55"/>
+<path d="M1100 994 H890" stroke="#FF1493" stroke-dasharray="6 5"/>
+</g>
+<!-- arrowheads -->
+<polygon points="560,160 549,154 549,166" fill="#0EA5E9"/>
+<polygon points="340,196 351,190 351,202" fill="#FF1493"/>
+<polygon points="880,178 891,172 891,184" fill="#FFFFFF" fill-opacity="0.75"/>
+<polygon points="705,400 699,389 711,389" fill="#FFFFFF" fill-opacity="0.9"/>
+<polygon points="745,236 739,247 751,247" fill="#FF1493"/>
+<polygon points="340,458 351,452 351,464" fill="#FFFFFF" fill-opacity="0.75"/>
+<polygon points="1100,458 1089,452 1089,464" fill="#FFFFFF" fill-opacity="0.75"/>
+<polygon points="705,650 699,639 711,639" fill="#0EA5E9"/>
+<polygon points="745,516 739,527 751,527" fill="#FF1493"/>
+<polygon points="340,690 351,684 351,696" fill="#FFFFFF" fill-opacity="0.75"/>
+<polygon points="560,726 549,720 549,732" fill="#FF1493"/>
+<polygon points="705,920 699,909 711,909" fill="#0EA5E9"/>
+<polygon points="745,766 739,777 751,777" fill="#FF1493"/>
+<polygon points="1100,958 1089,952 1089,964" fill="#FFFFFF" fill-opacity="0.75"/>
+<polygon points="880,994 891,988 891,1000" fill="#FF1493"/>
+
+<!-- arrow labels -->
+<g font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="11" text-anchor="middle">
+<rect x="395" y="129" width="110" height="22" rx="11" fill="#0B1020" stroke="#0EA5E9" stroke-opacity="0.5"/><text x="450" y="144" fill="#0EA5E9">commands / IPC</text>
+<rect x="385" y="207" width="130" height="22" rx="11" fill="#0B1020" stroke="#FF1493" stroke-opacity="0.5"/><text x="450" y="222" fill="#FF1493">events + terminal</text>
+<rect x="935" y="147" width="110" height="22" rx="11" fill="#0B1020" stroke="#FFFFFF" stroke-opacity="0.25"/><text x="990" y="162" fill="#FFFFFF" fill-opacity="0.75">same local API</text>
+<rect x="531" y="307" width="158" height="22" rx="11" fill="#0B1020" stroke="#FFFFFF" stroke-opacity="0.35"/><text x="610" y="322" fill="#FFFFFF" fill-opacity="0.9">authorize + dispatch</text>
+<rect x="762" y="307" width="116" height="22" rx="11" fill="#0B1020" stroke="#FF1493" stroke-opacity="0.5"/><text x="820" y="322" fill="#FF1493">session events</text>
+<rect x="388" y="425" width="124" height="22" rx="11" fill="#0B1020" stroke="#FFFFFF" stroke-opacity="0.25"/><text x="450" y="440" fill="#FFFFFF" fill-opacity="0.75">prepare checkout</text>
+<rect x="935" y="425" width="110" height="22" rx="11" fill="#0B1020" stroke="#FFFFFF" stroke-opacity="0.25"/><text x="990" y="440" fill="#FFFFFF" fill-opacity="0.75">save / restore</text>
+<rect x="530" y="572" width="164" height="22" rx="11" fill="#0B1020" stroke="#0EA5E9" stroke-opacity="0.5"/><text x="612" y="587" fill="#0EA5E9">spawn / input / resize</text>
+<rect x="766" y="572" width="112" height="22" rx="11" fill="#0B1020" stroke="#FF1493" stroke-opacity="0.5"/><text x="822" y="587" fill="#FF1493">output + exits</text>
+<rect x="400" y="657" width="100" height="22" rx="11" fill="#0B1020" stroke="#FFFFFF" stroke-opacity="0.25"/><text x="450" y="672" fill="#FFFFFF" fill-opacity="0.75">launch + input</text>
+<rect x="394" y="737" width="112" height="22" rx="11" fill="#0B1020" stroke="#FF1493" stroke-opacity="0.5"/><text x="450" y="752" fill="#FF1493">output + exits</text>
+<rect x="543" y="832" width="138" height="22" rx="11" fill="#0B1020" stroke="#0EA5E9" stroke-opacity="0.5"/><text x="612" y="847" fill="#0EA5E9">launch + PTY input</text>
+<rect x="766" y="832" width="132" height="22" rx="11" fill="#0B1020" stroke="#FF1493" stroke-opacity="0.5"/><text x="832" y="847" fill="#FF1493">PTY output + exit</text>
+<rect x="928" y="925" width="124" height="22" rx="11" fill="#0B1020" stroke="#FFFFFF" stroke-opacity="0.25"/><text x="990" y="940" fill="#FFFFFF" fill-opacity="0.75">HTTPS / own auth</text>
+<rect x="934" y="1005" width="112" height="22" rx="11" fill="#0B1020" stroke="#FF1493" stroke-opacity="0.5"/><text x="990" y="1020" fill="#FF1493">model responses</text>
+</g>
+
+<!-- ========== BOXES ========== -->
+<!-- Frontend: Desktop workspace -->
+<rect x="60" y="120" width="280" height="116" rx="16" fill="#0B1020"/>
+<rect x="60" y="120" width="280" height="116" rx="16" fill="#0EA5E9" fill-opacity="0.12" stroke="#0EA5E9" stroke-width="1.5"/>
+<text x="200" y="164" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">Desktop workspace</text>
+<text x="200" y="188" font-size="13.5" fill="#FFFFFF" fill-opacity="0.65" text-anchor="middle">Panes + terminal rendering</text>
+<text x="200" y="216" font-family="Menlo, Consolas, monospace" font-size="11" fill="#0EA5E9" text-anchor="middle">GPUI or SwiftUI + AppKit</text>
+
+<!-- Frontend: CLI + MCP -->
+<rect x="1100" y="120" width="280" height="116" rx="16" fill="#0B1020"/>
+<rect x="1100" y="120" width="280" height="116" rx="16" fill="#0EA5E9" fill-opacity="0.12" stroke="#0EA5E9" stroke-width="1.5"/>
+<text x="1240" y="164" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">CLI + MCP adapters</text>
+<text x="1240" y="188" font-size="13.5" fill="#FFFFFF" fill-opacity="0.65" text-anchor="middle">Scripts + agent tool calls</text>
+<text x="1240" y="216" font-family="Menlo, Consolas, monospace" font-size="11" fill="#0EA5E9" text-anchor="middle">Same engine operations</text>
+
+<!-- Backend: Local command API -->
+<rect x="560" y="120" width="320" height="116" rx="16" fill="#0B1020"/>
+<rect x="560" y="120" width="320" height="116" rx="16" fill="#FF1493" fill-opacity="0.12" stroke="#FF1493" stroke-width="1.5"/>
+<text x="720" y="164" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">Local command API</text>
+<text x="720" y="188" font-size="13.5" fill="#FFFFFF" fill-opacity="0.65" text-anchor="middle">Versioned requests + streams</text>
+<text x="720" y="216" font-family="Menlo, Consolas, monospace" font-size="11" fill="#FF1493" text-anchor="middle">Restricted local socket</text>
+
+<!-- Backend: Rust session engine -->
+<rect x="560" y="400" width="320" height="116" rx="16" fill="#0B1020"/>
+<rect x="560" y="400" width="320" height="116" rx="16" fill="#FF1493" fill-opacity="0.12" stroke="#FF1493" stroke-width="1.5"/>
+<text x="720" y="444" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">Rust session engine</text>
+<text x="720" y="468" font-size="13.5" fill="#FFFFFF" fill-opacity="0.65" text-anchor="middle">Lifecycle + schedules + tasks</text>
+<text x="720" y="496" font-family="Menlo, Consolas, monospace" font-size="11" fill="#FF1493" text-anchor="middle">Enforce action policy</text>
+
+<!-- Backend: PTY + terminal host -->
+<rect x="560" y="650" width="320" height="116" rx="16" fill="#0B1020"/>
+<rect x="560" y="650" width="320" height="116" rx="16" fill="#FF1493" fill-opacity="0.12" stroke="#FF1493" stroke-width="1.5"/>
+<text x="720" y="694" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">PTY + terminal host</text>
+<text x="720" y="718" font-size="13.5" fill="#FFFFFF" fill-opacity="0.65" text-anchor="middle">Process I/O + terminal state</text>
+<text x="720" y="746" font-family="Menlo, Consolas, monospace" font-size="11" fill="#FF1493" text-anchor="middle">Bounded buffers + reattach</text>
+
+<!-- Database: Git worktrees -->
+<rect x="60" y="400" width="280" height="116" rx="16" fill="#0B1020"/>
+<rect x="60" y="400" width="280" height="116" rx="16" fill="#0EA5E9" fill-opacity="0.09"/>
+<rect x="60" y="400" width="280" height="116" rx="16" fill="#FF1493" fill-opacity="0.09" stroke="#0EA5E9" stroke-width="1.5"/>
+<rect x="60" y="400" width="280" height="116" rx="16" fill="none" stroke="#FF1493" stroke-opacity="0.55" stroke-width="1.5"/>
+<text x="200" y="444" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">Git worktrees</text>
+<text x="200" y="468" font-size="13.5" fill="#FFFFFF" fill-opacity="0.65" text-anchor="middle">Isolated worker checkouts</text>
+<text x="200" y="496" font-family="Menlo, Consolas, monospace" font-size="11" fill="#FFFFFF" fill-opacity="0.6" text-anchor="middle">Explicit workspace ownership</text>
+
+<!-- Database: Local persistence -->
+<rect x="1100" y="400" width="280" height="116" rx="16" fill="#0B1020"/>
+<rect x="1100" y="400" width="280" height="116" rx="16" fill="#0EA5E9" fill-opacity="0.09"/>
+<rect x="1100" y="400" width="280" height="116" rx="16" fill="#FF1493" fill-opacity="0.09" stroke="#0EA5E9" stroke-width="1.5"/>
+<rect x="1100" y="400" width="280" height="116" rx="16" fill="none" stroke="#FF1493" stroke-opacity="0.55" stroke-width="1.5"/>
+<text x="1240" y="444" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">Local persistence</text>
+<text x="1240" y="468" font-size="13.5" fill="#FFFFFF" fill-opacity="0.65" text-anchor="middle">SQLite + session journals</text>
+<text x="1240" y="496" font-family="Menlo, Consolas, monospace" font-size="11" fill="#FFFFFF" fill-opacity="0.6" text-anchor="middle">Tasks, metadata, recovery</text>
+
+<!-- External: Development processes -->
+<rect x="60" y="650" width="280" height="116" rx="16" fill="#0B1020"/>
+<rect x="60" y="650" width="280" height="116" rx="16" fill="#FFFFFF" fill-opacity="0.04" stroke="#FFFFFF" stroke-opacity="0.32" stroke-width="1.5"/>
+<text x="200" y="694" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">Development processes</text>
+<text x="200" y="718" font-size="13.5" fill="#FFFFFF" fill-opacity="0.65" text-anchor="middle">Servers, workers, test watchers</text>
+<text x="200" y="746" font-family="Menlo, Consolas, monospace" font-size="11" fill="#FFFFFF" fill-opacity="0.45" text-anchor="middle">One managed process per role</text>
+
+<!-- External: Installed agent CLIs -->
+<rect x="560" y="920" width="320" height="116" rx="16" fill="#0B1020"/>
+<rect x="560" y="920" width="320" height="116" rx="16" fill="#FFFFFF" fill-opacity="0.04" stroke="#FFFFFF" stroke-opacity="0.32" stroke-width="1.5"/>
+<text x="720" y="964" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">Installed agent CLIs</text>
+<text x="720" y="988" font-size="13.5" fill="#FFFFFF" fill-opacity="0.65" text-anchor="middle">Claude, Codex, other tools</text>
+<text x="720" y="1016" font-family="Menlo, Consolas, monospace" font-size="11" fill="#FFFFFF" fill-opacity="0.45" text-anchor="middle">Their own auth + permissions</text>
+
+<!-- Cloud: Model providers -->
+<rect x="1100" y="920" width="280" height="116" rx="16" fill="#0B1020"/>
+<rect x="1100" y="920" width="280" height="116" rx="16" fill="#FFFFFF" fill-opacity="0.04" stroke="#FFFFFF" stroke-opacity="0.8" stroke-width="1.5" stroke-dasharray="7 5"/>
+<text x="1240" y="964" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">Model providers</text>
+<text x="1240" y="988" font-size="13.5" fill="#FFFFFF" fill-opacity="0.65" text-anchor="middle">Agent connects directly</text>
+<text x="1240" y="1016" font-family="Menlo, Consolas, monospace" font-size="11" fill="#FFFFFF" fill-opacity="0.6" text-anchor="middle">Outside your local runtime</text>
+
+<!-- ========== LEGEND ========== -->
+<g font-size="13" fill="#FFFFFF" fill-opacity="0.75">
+<rect x="60" y="1090" width="22" height="14" rx="4" fill="#0EA5E9" fill-opacity="0.12" stroke="#0EA5E9" stroke-width="1.5"/><text x="90" y="1102">Frontend</text>
+<rect x="175" y="1090" width="22" height="14" rx="4" fill="#FF1493" fill-opacity="0.12" stroke="#FF1493" stroke-width="1.5"/><text x="205" y="1102">Backend</text>
+<rect x="285" y="1090" width="22" height="14" rx="4" fill="#0EA5E9" fill-opacity="0.12" stroke="#0EA5E9" stroke-width="1.5"/><rect x="285" y="1090" width="22" height="14" rx="4" fill="#FF1493" fill-opacity="0.12" stroke="#FF1493" stroke-opacity="0.55" stroke-width="1.5"/><text x="315" y="1102">Storage</text>
+<rect x="395" y="1090" width="22" height="14" rx="4" fill="none" stroke="#FFFFFF" stroke-opacity="0.8" stroke-width="1.5" stroke-dasharray="4 3"/><text x="425" y="1102">Cloud</text>
+<rect x="490" y="1090" width="22" height="14" rx="4" fill="#FFFFFF" fill-opacity="0.04" stroke="#FFFFFF" stroke-opacity="0.32" stroke-width="1.5"/><text x="520" y="1102">External</text>
+
+<path d="M760 1097 H800" stroke="#0EA5E9" stroke-width="2"/><polygon points="808,1097 798,1092 798,1102" fill="#0EA5E9"/><text x="818" y="1102">Request / input</text>
+<path d="M960 1097 H1000" stroke="#FF1493" stroke-width="2" stroke-dasharray="6 5"/><polygon points="1008,1097 998,1092 998,1102" fill="#FF1493"/><text x="1018" y="1102">Events / output</text>
+<path d="M1160 1097 H1200" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="2"/><polygon points="1208,1097 1198,1092 1198,1102" fill="#FFFFFF" fill-opacity="0.75"/><text x="1218" y="1102">Call</text>
+<path d="M1262 1097 H1302" stroke="#FFFFFF" stroke-opacity="0.8" stroke-width="2" stroke-dasharray="6 5"/><polygon points="1310,1097 1300,1092 1300,1102" fill="#FFFFFF" fill-opacity="0.9"/><text x="1320" y="1102">Policy</text>
+</g>
+</svg>

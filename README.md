@@ -5,7 +5,7 @@ Agentic Development Environment for running and coordinating coding agents, back
 
 ## Architecture
 
-![Proposed Fleet architecture: a replaceable desktop frontend and CLI/MCP adapters connect to a Rust daemon that owns sessions, PTYs, scheduling, worktrees, and persistence.](assets/architecture.png)
+![Proposed Architecture](assets/architecture.svg)
 
 The Rust daemon owns agent processes and terminal sessions independently of the desktop UI. Closing the UI detaches the client; running agents continue until they exit or the daemon stops.
 
