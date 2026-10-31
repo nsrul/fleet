@@ -4,6 +4,7 @@
 /target/
 
 # macOS prototype build products and Xcode user state
+/dist/
 /apps/macos/.build/
 /apps/macos/FleetKit/.build/
 /apps/macos/.swiftpm/

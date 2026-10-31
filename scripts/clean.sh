@@ -11,6 +11,7 @@ else
 fi
 
 echo "==> Removing macOS build artifacts"
+rm -rf "$ROOT/dist"
 rm -rf "$ROOT/apps/macos/.build"
 rm -rf "$ROOT/apps/macos/FleetKit/.build"
 rm -rf "$ROOT/apps/macos/Fleet.xcodeproj/project.xcworkspace/xcuserdata"

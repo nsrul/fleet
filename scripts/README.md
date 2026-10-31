@@ -12,6 +12,7 @@ Run them from anywhere; each resolves the repository root itself.
 | `scripts/test.sh` | Runs the Rust workspace tests and the `FleetKit` tests. |
 | `scripts/verify.sh` | Runs formatting, Clippy, tests, protocol smoke checks, and the app build. |
 | `scripts/clean.sh` | Removes Rust and macOS build artifacts. Keeps the generated Xcode project. |
+| `scripts/release.sh` | Builds a Release `Fleet.app` with the release daemon, signs it, and zips it under `dist/`. |
 
 The macOS-specific implementations live in `apps/macos/scripts/`. The root
 scripts are stable entry points so the commands do not change if the app layout
@@ -40,6 +41,16 @@ scripts/verify.sh
 `verify.sh` needs Xcode, a Rust toolchain, and the agent CLIs only for the
 optional manual checklist printed by `apps/macos/scripts/verify-terminal.sh`.
 The automated checks use `/bin/sh` and do not need agent credentials.
+
+Release build:
+
+```sh
+scripts/release.sh
+scripts/release.sh --sign "Developer ID Application: Name (TEAMID)"
+```
+
+The version, signing choice, checks, and archive layout are in
+[`docs/RELEASE.md`](../docs/RELEASE.md).
 
 ## Environment
 
