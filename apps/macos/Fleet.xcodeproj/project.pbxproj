@@ -12,12 +12,14 @@
 		107665118E830BB088836256 /* FleetAPI in Frameworks */ = {isa = PBXBuildFile; productRef = BE57F7AE00F4C8C72AE3A232 /* FleetAPI */; };
 		1EAE0C08A2AFF2B6A92722B9 /* ContextPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 484119FE72EF462E66228A49 /* ContextPanelView.swift */; };
 		2BEB17A9980A7937CD4DBC7F /* DaemonLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85343EA7A7BA41C4E21E7957 /* DaemonLauncher.swift */; };
+		34206BC65CD9FC00F732384B /* Fleet.icns in Resources */ = {isa = PBXBuildFile; fileRef = D4C8FC928C7647044BAFEB21 /* Fleet.icns */; };
 		3718DE84C778244F8EFD4F23 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7057DA52D27913E1D3526C /* ConnectionView.swift */; };
 		46814482FB1A7748AA9559F8 /* GitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8077A6471D75FC1652EB1D51 /* GitService.swift */; };
 		4D7D342C912B6E48CDBA5766 /* AgentCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC857938EA7118BD4594A321 /* AgentCatalog.swift */; };
 		5F0CF8BA4DBC006F8FE5E3FE /* TerminalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA8A45647CE4DC7AC70CDE5D /* TerminalController.swift */; };
 		6A497CA959385417B2F8816A /* TerminalPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D09011A40F3BE078C4A1C838 /* TerminalPaneView.swift */; };
 		6E1A67C0F08DD0534DF37749 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913E8BFEADA4AD1C81F0C47F /* Theme.swift */; };
+		702852ACD85393DAC201EE75 /* FleetDark.icns in Resources */ = {isa = PBXBuildFile; fileRef = BE8737718697F74387370A71 /* FleetDark.icns */; };
 		70AF7FABB2160FE236EEDE25 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 91D44AA899C58CC867E91AB0 /* SwiftTerm */; };
 		B1CC79E83848B04546AF91C0 /* TerminalHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 871E4C8B27623F3D2757925B /* TerminalHostView.swift */; };
 		B4D8F15DCF28023F64E0839A /* UserNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = B58FFE1EF1BBA9D15EFFC2D0 /* UserNotice.swift */; };
@@ -47,9 +49,11 @@
 		B58FFE1EF1BBA9D15EFFC2D0 /* UserNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserNotice.swift; sourceTree = "<group>"; };
 		BB851BD8F45E2DDBD2D07009 /* Fleet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Fleet.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BC857938EA7118BD4594A321 /* AgentCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCatalog.swift; sourceTree = "<group>"; };
+		BE8737718697F74387370A71 /* FleetDark.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = FleetDark.icns; sourceTree = "<group>"; };
 		C329FAEED4F1EDF600180595 /* FleetApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetApp.swift; sourceTree = "<group>"; };
 		CF9999C19AD118E18E796F39 /* PanelLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLayout.swift; sourceTree = "<group>"; };
 		D09011A40F3BE078C4A1C838 /* TerminalPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalPaneView.swift; sourceTree = "<group>"; };
+		D4C8FC928C7647044BAFEB21 /* Fleet.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Fleet.icns; sourceTree = "<group>"; };
 		DA8A45647CE4DC7AC70CDE5D /* TerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalController.swift; sourceTree = "<group>"; };
 		DB7773FB40FDCB7F750DD7EA /* TerminalAreaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAreaView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -154,6 +158,8 @@
 			isa = PBXGroup;
 			children = (
 				8D86FF4284B57A36E0A5DE24 /* Assets.xcassets */,
+				D4C8FC928C7647044BAFEB21 /* Fleet.icns */,
+				BE8737718697F74387370A71 /* FleetDark.icns */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -226,6 +232,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				0D246EB71B087B1691006F35 /* Assets.xcassets in Resources */,
+				34206BC65CD9FC00F732384B /* Fleet.icns in Resources */,
+				702852ACD85393DAC201EE75 /* FleetDark.icns in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
