@@ -8,7 +8,14 @@ struct RootView: View {
         WorkspaceColumns(model: model)
         .ignoresSafeArea(edges: .top)
         .frame(minWidth: 1080, minHeight: 680)
-        .background(Palette.windowBackground)
+        .background {
+            if model.panelSolidity >= 0.999 {
+                Palette.windowBackground
+            }
+        }
+        .background {
+            WindowOpacity(transparent: model.panelSolidity < 0.999)
+        }
         .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme ?? .light)
         .onAppear {
             model.applyAppearance(appearanceRaw)

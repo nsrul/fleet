@@ -23,6 +23,24 @@ struct SettingsView: View {
                 Text("The prototype defaults to Light to match the design reference.")
                     .font(Typography.captionRegular)
                     .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Glass")
+                    HStack(spacing: 8) {
+                        Text("Liquid")
+                            .frame(width: 48, alignment: .leading)
+                        Slider(value: $model.panelSolidity, in: 0...1)
+                            .accessibilityLabel("Glass")
+                        Text("Opaque")
+                            .frame(width: 52, alignment: .trailing)
+                    }
+                    .font(Typography.captionRegular)
+                    .foregroundStyle(.secondary)
+
+                    Text("Left and right panels.")
+                        .font(Typography.captionRegular)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Terminal") {
@@ -111,7 +129,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 540, height: 500)
+        .frame(width: 540, height: 560)
         .onAppear {
             guard !didLoad else { return }
             socketPath = model.socketPath

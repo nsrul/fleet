@@ -283,3 +283,85 @@ struct VisualEffectView: NSViewRepresentable {
         nsView.state = .active
     }
 }
+
+/// Side-panel fill. Solidity 0 is liquid glass. Solidity 1 is the solid color.
+struct PanelSurface: View {
+    var solid: Color
+    var solidity: Double
+
+    private var showsGlass: Bool { solidity < 0.999 }
+
+    var body: some View {
+        ZStack {
+            if showsGlass {
+                LiquidGlassPlate()
+            }
+            solid.opacity(showsGlass ? solidity : 1)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// Clears the window while the side panels are glass, so the effect samples
+/// the desktop instead of an opaque window fill. Solid mode restores it.
+struct WindowOpacity: NSViewRepresentable {
+    var transparent: Bool
+
+    func makeNSView(context: Context) -> WindowOpacityView {
+        let view = WindowOpacityView()
+        view.transparent = transparent
+        return view
+    }
+
+    func updateNSView(_ nsView: WindowOpacityView, context: Context) {
+        nsView.transparent = transparent
+    }
+}
+
+final class WindowOpacityView: NSView {
+    var transparent = false {
+        didSet {
+            if transparent != oldValue { apply() }
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        apply()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    private func apply() {
+        guard let window else { return }
+        window.isOpaque = !transparent
+        window.backgroundColor = transparent ? .clear : .windowBackgroundColor
+        window.invalidateShadow()
+    }
+}
+
+private struct LiquidGlassPlate: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        if #available(macOS 26, *) {
+            let glass = NSGlassEffectView()
+            glass.style = .regular
+            glass.cornerRadius = 0
+            let content = NSView()
+            content.autoresizingMask = [.width, .height]
+            glass.contentView = content
+            return glass
+        }
+        let effect = NSVisualEffectView()
+        effect.material = .underWindowBackground
+        effect.blendingMode = .behindWindow
+        effect.state = .followsWindowActiveState
+        return effect
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if #available(macOS 26, *), let glass = nsView as? NSGlassEffectView {
+            glass.style = .regular
+            glass.cornerRadius = 0
+        }
+    }
+}

@@ -114,6 +114,17 @@ final class AppModel {
     var showContext = true {
         didSet { UserDefaults.standard.set(showContext, forKey: Self.showContextKey) }
     }
+    /// 0 is liquid glass on the side panels. 1 is the solid panel color.
+    var panelSolidity: Double = 1 {
+        didSet {
+            let clamped = min(1, max(0, panelSolidity))
+            if clamped != panelSolidity {
+                panelSolidity = clamped
+                return
+            }
+            UserDefaults.standard.set(clamped, forKey: Self.panelSolidityKey)
+        }
+    }
     var filter: SessionFilter = .all
     /// Sessions that produced output in the last few seconds.
     private(set) var activeSessionIDs: Set<String> = []
@@ -159,6 +170,7 @@ final class AppModel {
     private static let showSidebarKey = "director.showSidebar"
     private static let showContextKey = "director.showContext"
     private static let sessionNamesKey = "director.sessionNames"
+    private static let panelSolidityKey = "director.panelSolidity"
 
     init() {
         let defaults = UserDefaults.standard
@@ -172,6 +184,9 @@ final class AppModel {
         showSidebar = defaults.object(forKey: Self.showSidebarKey) as? Bool ?? true
         showContext = defaults.object(forKey: Self.showContextKey) as? Bool ?? true
         sessionNames = defaults.dictionary(forKey: Self.sessionNamesKey) as? [String: String] ?? [:]
+        if let stored = defaults.object(forKey: Self.panelSolidityKey) as? Double {
+            panelSolidity = min(1, max(0, stored))
+        }
     }
 
     // MARK: - Derived state
