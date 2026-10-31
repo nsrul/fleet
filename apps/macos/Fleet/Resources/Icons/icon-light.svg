@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 260 260">
+  <defs>
+    <clipPath id="shape">
+      <rect width="260" height="260" rx="58"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#shape)">
+    <rect width="260" height="260" fill="#FFFFFF"/>
+    <circle cx="200" cy="62" r="28" fill="#FF1493" fill-opacity="0.15"/>
+    <circle cx="200" cy="62" r="17" fill="#FF1493" fill-opacity="0.35"/>
+    <path d="M64 186 L104 70 L98 186 Z" fill="#0EA5E9"/>
+    <path d="M98 186 L104 70 L124 186 Z" fill="#0EA5E9" fill-opacity="0.7"/>
+    <path d="M98 190 L146 44 L140 190 Z" fill="#0EA5E9" fill-opacity="0.55"/>
+    <path d="M140 190 L146 44 L174 190 Z" fill="#0EA5E9" fill-opacity="0.32"/>
+    <path d="M134 196 L188 62 L182 196 Z" fill="#FF1493"/>
+    <path d="M182 196 L188 62 L214 196 Z" fill="#FF1493" fill-opacity="0.72"/>
+    <path d="M189 140 L199 150 L189 160" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M60 188 H128 L120 198 H68 Z" fill="#0EA5E9"/>
+    <path d="M94 192 H178 L168 202 H104 Z" fill="#0EA5E9" fill-opacity="0.8"/>
+    <path d="M128 198 H220 L208 210 H140 Z" fill="#FF1493"/>
+    <path d="M0 214 L30 206 L64 216 L100 208 L140 218 L180 208 L220 216 L260 206 V260 H0 Z" fill="#0EA5E9" fill-opacity="0.25"/>
+    <path d="M150 214 L206 214 L190 236 L166 236 Z" fill="#FF1493" fill-opacity="0.3"/>
+    <path d="M0 230 L40 222 L84 234 L130 224 L176 236 L220 226 L260 234 V260 H0 Z" fill="#0EA5E9" fill-opacity="0.45"/>
+    <path d="M0 248 L50 240 L110 252 L170 242 L230 252 L260 246 V260 H0 Z" fill="#0EA5E9" fill-opacity="0.75"/>
+  </g>
+  <rect x="0.75" y="0.75" width="258.5" height="258.5" rx="57.5" fill="none" stroke="#0EA5E9" stroke-opacity="0.3" stroke-width="1.5"/>
+</svg>

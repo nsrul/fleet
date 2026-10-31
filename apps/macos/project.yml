@@ -34,6 +34,7 @@ targets:
       - path: Fleet
         excludes:
           - "Info.plist"
+          - "Resources/Icons"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.fleet.macos
