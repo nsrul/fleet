@@ -7,6 +7,7 @@ Run them from anywhere; each resolves the repository root itself.
 | --- | --- |
 | `scripts/dev.sh` | Builds the daemon and app once, then launches Fleet. |
 | `scripts/build.sh` | Builds `fleet-daemon` and the macOS app. |
+| `scripts/install.sh` | Builds a release from this checkout, quits Fleet, stops `fleet-daemon`, removes older installs, and installs `Fleet.app` and `fleet-daemon`. |
 | `scripts/run.sh` | Builds if needed, starts a daemon when necessary, and opens Fleet. |
 | `scripts/demo.sh` | Opens Fleet with two live agent sessions. |
 | `scripts/test.sh` | Runs the Rust workspace tests and the `FleetKit` tests. |
@@ -47,4 +48,8 @@ The automated checks use `/bin/sh` and do not need agent credentials.
   `~/.fleet/daemon.sock`).
 - `FLEET_WORKDIR` sets the default working directory for new sessions.
 - `FLEET_DAEMON` points at a specific `fleet-daemon` binary.
+- `FLEET_INSTALL_DIR` is where `scripts/install.sh` puts `Fleet.app` (default
+  `~/Applications`).
+- `FLEET_DAEMON_DIR` is where `scripts/install.sh` puts `fleet-daemon` (default
+  `~/.fleet/bin`).
 - `TMPDIR` controls where run logs and PID files are written.
