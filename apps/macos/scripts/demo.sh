@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(cd "$APP_DIR/../.." && pwd)"
-SOCKET="${DIRECTOR_SOCKET:-$HOME/.director/daemon.sock}"
+SOCKET="${FLEET_SOCKET:-$HOME/.fleet/daemon.sock}"
 LOG_DIR="${TMPDIR:-/tmp}"
 
 "$SCRIPT_DIR/build.sh"
@@ -13,9 +13,9 @@ mkdir -p "$(dirname "$SOCKET")"
 chmod 700 "$(dirname "$SOCKET")" 2>/dev/null || true
 
 if [ ! -S "$SOCKET" ]; then
-  "$ROOT/target/debug/director-daemon" --socket "$SOCKET" \
-    > "$LOG_DIR/director-daemon.log" 2>&1 &
-  echo $! > "$LOG_DIR/director-daemon.pid"
+  "$ROOT/target/debug/fleet-daemon" --socket "$SOCKET" \
+    > "$LOG_DIR/fleet-daemon.log" 2>&1 &
+  echo $! > "$LOG_DIR/fleet-daemon.pid"
   for _ in $(seq 1 30); do
     [ -S "$SOCKET" ] && break
     sleep 0.1
@@ -23,7 +23,7 @@ if [ ! -S "$SOCKET" ]; then
 fi
 
 if [ ! -S "$SOCKET" ]; then
-  echo "error: director-daemon did not open $SOCKET" >&2
+  echo "error: fleet-daemon did not open $SOCKET" >&2
   exit 1
 fi
 
@@ -44,15 +44,15 @@ fi
 
 # Remove demo sessions from a previous run. Missing sessions are fine.
 (
-  cd "$APP_DIR/DirectorKit"
+  cd "$APP_DIR/FleetKit"
   for id in "${IDS[@]}"; do
-    swift run DirectorProbe --socket "$SOCKET" --stop "$id" >/dev/null 2>&1 || true
+    swift run FleetProbe --socket "$SOCKET" --stop "$id" >/dev/null 2>&1 || true
   done
 )
 
 (
-  cd "$APP_DIR/DirectorKit"
-  swift run DirectorProbe \
+  cd "$APP_DIR/FleetKit"
+  swift run FleetProbe \
     --socket "$SOCKET" \
     --cwd "$ROOT" \
     --program "${PROGRAMS[0]}" \
@@ -62,13 +62,13 @@ fi
     --keep
 )
 
-APP_BINARY="$APP_DIR/.build/Build/Products/Debug/Director.app/Contents/MacOS/Director"
-osascript -e 'tell application "Director" to quit' >/dev/null 2>&1 || true
+APP_BINARY="$APP_DIR/.build/Build/Products/Debug/Fleet.app/Contents/MacOS/Fleet"
+osascript -e 'tell application "Fleet" to quit' >/dev/null 2>&1 || true
 sleep 0.5
-DIRECTOR_SOCKET="$SOCKET" "$APP_BINARY" \
-  > "$LOG_DIR/director-app.log" 2>&1 &
+FLEET_SOCKET="$SOCKET" "$APP_BINARY" \
+  > "$LOG_DIR/fleet-app.log" 2>&1 &
 
 echo
 echo "Two live panes: ${IDS[0]} (${PROGRAMS[0]}) and ${IDS[1]} (${PROGRAMS[1]})."
 echo "Socket: $SOCKET"
-echo "Daemon log: $LOG_DIR/director-daemon.log"
+echo "Daemon log: $LOG_DIR/fleet-daemon.log"

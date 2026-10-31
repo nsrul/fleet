@@ -15,13 +15,13 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use director_engine::{
+use fleet_engine::{
     Engine, EngineError, EngineState, OutputChunk, OutputSnapshot as EngineOutputSnapshot,
     SessionError, SessionExit as EngineSessionExit, SessionHandle, SessionId,
     SessionInfo as EngineSessionInfo, SessionSpec, SessionStatus as EngineSessionStatus,
     TerminalSize as EngineTerminalSize,
 };
-use director_protocol::{
+use fleet_protocol::{
     DaemonState, PROTOCOL_VERSION,
     api::{
         ApiError, AttachedSession, Base64Bytes, CAPABILITY_REMOVE_SESSION, ClientMessage, Command,
@@ -565,11 +565,11 @@ async fn execute(
             Ok(ResponseData::Acknowledged)
         }
         Command::Input { id, data } => {
-            if data.len() > director_protocol::api::MAX_INPUT_BYTES {
+            if data.len() > fleet_protocol::api::MAX_INPUT_BYTES {
                 return Err(ApiError::invalid_request(format!(
                     "input is {} bytes; the limit is {} bytes",
                     data.len(),
-                    director_protocol::api::MAX_INPUT_BYTES,
+                    fleet_protocol::api::MAX_INPUT_BYTES,
                 )));
             }
             let id = session_id(id)?;
@@ -807,8 +807,8 @@ fn protocol_exit(exit: &EngineSessionExit) -> SessionExit {
     }
 }
 
-fn protocol_snapshot(snapshot: &EngineOutputSnapshot) -> director_protocol::api::OutputSnapshot {
-    director_protocol::api::OutputSnapshot {
+fn protocol_snapshot(snapshot: &EngineOutputSnapshot) -> fleet_protocol::api::OutputSnapshot {
+    fleet_protocol::api::OutputSnapshot {
         data: Base64Bytes::new(snapshot.bytes.clone()),
         first_seq: snapshot.first_seq,
         next_seq: snapshot.next_seq,
@@ -852,7 +852,7 @@ fn map_session_error(error: SessionError) -> ApiError {
 
 #[cfg(test)]
 mod tests {
-    use director_protocol::api::{CreateSession, ErrorCode};
+    use fleet_protocol::api::{CreateSession, ErrorCode};
 
     use super::build_spec;
 

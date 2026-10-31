@@ -20,7 +20,7 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        Self::from_sources(env::args_os().skip(1), env::var_os("DIRECTOR_SOCKET"))
+        Self::from_sources(env::args_os().skip(1), env::var_os("FLEET_SOCKET"))
     }
 
     fn from_sources<I>(args: I, env_socket: Option<OsString>) -> Result<Self>
@@ -50,7 +50,7 @@ impl Config {
             None => match env_socket {
                 Some(socket) => {
                     if socket.is_empty() {
-                        bail!("DIRECTOR_SOCKET must not be empty");
+                        bail!("FLEET_SOCKET must not be empty");
                     }
                     (socket, false)
                 }
@@ -89,14 +89,14 @@ impl Config {
 fn default_socket_path() -> PathBuf {
     if let Some(runtime_dir) = env::var_os("XDG_RUNTIME_DIR").filter(|dir| !dir.is_empty()) {
         return PathBuf::from(runtime_dir)
-            .join("director")
+            .join("fleet")
             .join("daemon.sock");
     }
 
     // SAFETY: getuid has no preconditions and does not mutate global state.
     let uid = unsafe { libc::getuid() };
     env::temp_dir()
-        .join(format!("director-{uid}"))
+        .join(format!("fleet-{uid}"))
         .join("daemon.sock")
 }
 

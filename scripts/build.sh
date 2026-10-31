@@ -3,5 +3,5 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "==> Building director-daemon and Director.app"
+echo "==> Building fleet-daemon and Fleet.app"
 "$ROOT/apps/macos/scripts/build.sh"

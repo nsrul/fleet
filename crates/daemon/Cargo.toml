@@ -1,13 +1,13 @@
 [package]
-name = "director-daemon"
+name = "fleet-daemon"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-director-engine = { path = "../engine" }
-director-protocol = { path = "../protocol" }
+fleet-engine = { path = "../engine" }
+fleet-protocol = { path = "../protocol" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

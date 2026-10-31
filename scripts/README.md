@@ -1,15 +1,15 @@
 # Development scripts
 
-Convenience scripts for building, running, testing, and verifying Director.
+Convenience scripts for building, running, testing, and verifying Fleet.
 Run them from anywhere; each resolves the repository root itself.
 
 | Script | What it does |
 | --- | --- |
-| `scripts/dev.sh` | Builds the daemon and app once, then launches Director. |
-| `scripts/build.sh` | Builds `director-daemon` and the macOS app. |
-| `scripts/run.sh` | Builds if needed, starts a daemon when necessary, and opens Director. |
-| `scripts/demo.sh` | Opens Director with two live agent sessions. |
-| `scripts/test.sh` | Runs the Rust workspace tests and the `DirectorKit` tests. |
+| `scripts/dev.sh` | Builds the daemon and app once, then launches Fleet. |
+| `scripts/build.sh` | Builds `fleet-daemon` and the macOS app. |
+| `scripts/run.sh` | Builds if needed, starts a daemon when necessary, and opens Fleet. |
+| `scripts/demo.sh` | Opens Fleet with two live agent sessions. |
+| `scripts/test.sh` | Runs the Rust workspace tests and the `FleetKit` tests. |
 | `scripts/verify.sh` | Runs formatting, Clippy, tests, protocol smoke checks, and the app build. |
 | `scripts/clean.sh` | Removes Rust and macOS build artifacts. Keeps the generated Xcode project. |
 
@@ -43,8 +43,8 @@ The automated checks use `/bin/sh` and do not need agent credentials.
 
 ## Environment
 
-- `DIRECTOR_SOCKET` overrides the daemon socket (default
-  `~/.director/daemon.sock`).
-- `DIRECTOR_WORKDIR` sets the default working directory for new sessions.
-- `DIRECTOR_DAEMON` points at a specific `director-daemon` binary.
+- `FLEET_SOCKET` overrides the daemon socket (default
+  `~/.fleet/daemon.sock`).
+- `FLEET_WORKDIR` sets the default working directory for new sessions.
+- `FLEET_DAEMON` points at a specific `fleet-daemon` binary.
 - `TMPDIR` controls where run logs and PID files are written.

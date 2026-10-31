@@ -8,5 +8,5 @@ echo "==> Rust workspace tests"
 cargo test --workspace --locked
 
 echo
-echo "==> DirectorKit tests"
-(cd "$ROOT/apps/macos/DirectorKit" && swift test)
+echo "==> FleetKit tests"
+(cd "$ROOT/apps/macos/FleetKit" && swift test)

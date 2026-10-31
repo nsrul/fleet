@@ -12,8 +12,8 @@ fi
 
 echo "==> Removing macOS build artifacts"
 rm -rf "$ROOT/apps/macos/.build"
-rm -rf "$ROOT/apps/macos/DirectorKit/.build"
-rm -rf "$ROOT/apps/macos/Director.xcodeproj/project.xcworkspace/xcuserdata"
-rm -rf "$ROOT/apps/macos/Director.xcodeproj/xcuserdata"
+rm -rf "$ROOT/apps/macos/FleetKit/.build"
+rm -rf "$ROOT/apps/macos/Fleet.xcodeproj/project.xcworkspace/xcuserdata"
+rm -rf "$ROOT/apps/macos/Fleet.xcodeproj/xcuserdata"
 
 echo "Done. The generated Xcode project and Package.resolved were kept."
