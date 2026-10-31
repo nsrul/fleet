@@ -103,7 +103,10 @@ struct SidebarView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Palette.sidebarSurface.ignoresSafeArea())
+        .background {
+            PanelSurface(solid: Palette.sidebarSurface, solidity: model.panelSolidity)
+                .ignoresSafeArea()
+        }
         .onChange(of: searchOpen) { _, open in
             if !open { searchText = "" }
         }

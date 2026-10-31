@@ -13,7 +13,10 @@ struct ContextPanelView: View {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.contextBackground)
+        .background {
+            PanelSurface(solid: Palette.contextBackground, solidity: model.panelSolidity)
+                .ignoresSafeArea()
+        }
     }
 
     private var session: SessionInfo? { model.contextSession }
