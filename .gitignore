@@ -5,9 +5,9 @@
 
 # macOS prototype build products and Xcode user state
 /apps/macos/.build/
-/apps/macos/DirectorKit/.build/
+/apps/macos/FleetKit/.build/
 /apps/macos/.swiftpm/
-/apps/macos/DirectorKit/.swiftpm/
+/apps/macos/FleetKit/.swiftpm/
 **/xcuserdata/
 *.xcuserstate
 

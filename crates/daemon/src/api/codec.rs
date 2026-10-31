@@ -1,7 +1,7 @@
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-use director_protocol::api::MAX_FRAME_BYTES;
+use fleet_protocol::api::MAX_FRAME_BYTES;
 
 /// A length-prefixed JSON frame could not be read or written.
 #[derive(Debug, thiserror::Error)]
@@ -60,7 +60,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use director_protocol::api::ClientMessage;
+    use fleet_protocol::api::ClientMessage;
     use serde_json::json;
 
     use super::{FrameError, read};
@@ -105,7 +105,7 @@ mod tests {
 
     #[tokio::test]
     async fn encoding_rejects_frames_above_the_limit() {
-        let huge = serde_json::Value::String("x".repeat(director_protocol::api::MAX_FRAME_BYTES));
+        let huge = serde_json::Value::String("x".repeat(fleet_protocol::api::MAX_FRAME_BYTES));
         assert!(matches!(
             super::encode(&huge),
             Err(FrameError::TooLarge { .. })

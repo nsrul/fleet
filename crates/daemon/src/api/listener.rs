@@ -130,7 +130,7 @@ async fn remove_if_stale(path: &Path) -> Result<()> {
 
     match tokio::time::timeout(STALE_CHECK_TIMEOUT, UnixStream::connect(path)).await {
         Ok(Ok(_)) => bail!(
-            "another director daemon is already listening at {}",
+            "another fleet daemon is already listening at {}",
             path.display()
         ),
         Ok(Err(error))

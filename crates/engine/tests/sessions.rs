@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use director_engine::{
+use fleet_engine::{
     Engine, EngineError, EngineState, SessionError, SessionExit, SessionHandle, SessionId,
     SessionSpec, SessionStatus, TerminalSize,
 };
@@ -95,7 +95,7 @@ async fn spawn_reports_a_running_session_and_rejects_duplicate_ids() {
 #[tokio::test]
 async fn a_failed_spawn_does_not_reserve_the_id() {
     let mut engine = Engine::start();
-    let missing = SessionSpec::new(id("reuse"), "/director-missing-program")
+    let missing = SessionSpec::new(id("reuse"), "/fleet-missing-program")
         .cwd(std::env::current_dir().unwrap());
 
     let error = engine.spawn_session(missing).unwrap_err();
@@ -121,14 +121,14 @@ async fn sessions_inherit_the_environment_and_use_the_requested_cwd() {
     let script = concat!(
         "printf 'cwd=%s\\n' \"$(pwd -P)\"; ",
         "printf 'home=%s\\n' \"$HOME\"; ",
-        "printf 'override=%s\\n' \"$DIRECTOR_TEST_OVERRIDE\"",
+        "printf 'override=%s\\n' \"$FLEET_TEST_OVERRIDE\"",
     );
 
     let spec = SessionSpec::new(id("environment"), "/bin/sh")
         .arg("-c")
         .arg(script)
         .cwd(directory.path())
-        .env("DIRECTOR_TEST_OVERRIDE", "present");
+        .env("FLEET_TEST_OVERRIDE", "present");
     let handle = engine.spawn_session(spec).unwrap();
     let output = wait_for_output(&handle, "override=present").await;
 
@@ -239,7 +239,7 @@ async fn two_sessions_run_independently() {
     let script = |label: &str| {
         format!(
             concat!(
-                "printf 'ready:{label}:%s:%s\\n' \"$(pwd -P)\" \"$DIRECTOR_TEST\"; ",
+                "printf 'ready:{label}:%s:%s\\n' \"$(pwd -P)\" \"$FLEET_TEST\"; ",
                 "IFS= read -r line; ",
                 "printf '{label}-got:%s\\n' \"$line\"",
             ),
@@ -251,13 +251,13 @@ async fn two_sessions_run_independently() {
         .arg("-c")
         .arg(script("A"))
         .cwd(directory_a.path())
-        .env("DIRECTOR_TEST", "value-a")
+        .env("FLEET_TEST", "value-a")
         .size(TerminalSize::new(24, 80));
     let spec_b = SessionSpec::new(id("session-b"), "/bin/sh")
         .arg("-c")
         .arg(script("B"))
         .cwd(directory_b.path())
-        .env("DIRECTOR_TEST", "value-b")
+        .env("FLEET_TEST", "value-b")
         .size(TerminalSize::new(30, 100));
     let session_a = engine.spawn_session(spec_a).unwrap();
     let session_b = engine.spawn_session(spec_b).unwrap();

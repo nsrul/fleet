@@ -25,7 +25,7 @@ pub struct Daemon {
 impl Daemon {
     pub fn spawn(filter: Option<&str>) -> Self {
         let directory = tempfile::Builder::new()
-            .prefix("director-api-")
+            .prefix("fleet-api-")
             .tempdir()
             .expect("create a temporary socket directory");
         let socket = directory.path().join("daemon.sock");
@@ -37,7 +37,7 @@ impl Daemon {
     }
 
     fn launch(filter: Option<&str>, socket: PathBuf, directory: Option<tempfile::TempDir>) -> Self {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_director-daemon"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_fleet-daemon"));
         command.arg("--socket").arg(&socket);
         if let Some(filter) = filter {
             command.env("RUST_LOG", filter);

@@ -12,7 +12,7 @@ if ! command -v xcodebuild >/dev/null 2>&1; then
   exit 1
 fi
 
-cargo build -p director-daemon --locked
+cargo build -p fleet-daemon --locked
 
 if command -v xcodegen >/dev/null 2>&1; then
   (cd "$APP_DIR" && xcodegen generate)
@@ -24,8 +24,8 @@ fi
 # SwiftTerm ships a build-tool plugin that Xcode asks to validate on first use.
 # The prototype is ad-hoc signed; skip validation for local, non-distributed builds.
 xcodebuild \
-  -project "$APP_DIR/Director.xcodeproj" \
-  -scheme Director \
+  -project "$APP_DIR/Fleet.xcodeproj" \
+  -scheme Fleet \
   -configuration Debug \
   -derivedDataPath "$APP_DIR/.build" \
   -skipPackagePluginValidation \
@@ -34,4 +34,4 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO
 
 echo
-echo "Built: $APP_DIR/.build/Build/Products/Debug/Director.app"
+echo "Built: $APP_DIR/.build/Build/Products/Debug/Fleet.app"

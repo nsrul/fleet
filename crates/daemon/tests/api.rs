@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use director_protocol::{
+use fleet_protocol::{
     PROTOCOL_VERSION,
     api::{
         ApiError, AttachedSession, Base64Bytes, ClientMessage, Command, CreateSession, ErrorCode,
@@ -57,10 +57,10 @@ impl Client {
                 ..
             } => {
                 assert_eq!(protocol_version, PROTOCOL_VERSION);
-                assert_eq!(engine_state, director_protocol::DaemonState::Running);
+                assert_eq!(engine_state, fleet_protocol::DaemonState::Running);
                 assert!(
                     capabilities.iter().any(|capability| capability
-                        == director_protocol::api::CAPABILITY_REMOVE_SESSION)
+                        == fleet_protocol::api::CAPABILITY_REMOVE_SESSION)
                 );
             }
             other => panic!("expected a welcome, got {other:?}"),
@@ -129,8 +129,8 @@ impl Client {
                     result,
                 } if received == request_id => {
                     return match result {
-                        director_protocol::api::ResponseResult::Ok(data) => Ok(data),
-                        director_protocol::api::ResponseResult::Error(error) => Err(error),
+                        fleet_protocol::api::ResponseResult::Ok(data) => Ok(data),
+                        fleet_protocol::api::ResponseResult::Error(error) => Err(error),
                     };
                 }
                 ServerMessage::Event { event } => self.events.push_back(event),
@@ -752,7 +752,7 @@ async fn socket_permissions_are_owner_only() {
 #[tokio::test]
 async fn live_and_stale_sockets_are_handled() {
     let directory = tempfile::Builder::new()
-        .prefix("director-api-")
+        .prefix("fleet-api-")
         .tempdir()
         .unwrap();
     let socket = directory.path().join("daemon.sock");

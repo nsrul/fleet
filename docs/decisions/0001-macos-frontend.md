@@ -2,11 +2,11 @@
 
 Status: accepted for the issue #4 prototype
 Date: 2026-10-27
-Issue: [#4](https://github.com/nnayz/director/issues/4)
+Issue: [#4](https://github.com/nsrul/fleet/issues/4)
 
 ## Context
 
-Director needs a desktop frontend that can show one project with two live agent
+Fleet needs a desktop frontend that can show one project with two live agent
 sessions, send keyboard input, render Unicode, support selection and scrollback,
 and reflow terminals when panes or the window resize. The daemon already owns the
 PTYs and exposes raw bytes over the local Unix-socket API.

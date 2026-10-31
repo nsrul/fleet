@@ -1,10 +1,10 @@
-# Director
+# Fleet
 
 A proposed desktop workspace for running and coordinating coding agents, backed by a Rust engine.
 
 ## Architecture
 
-![Proposed Director architecture: a replaceable desktop frontend and CLI/MCP adapters connect to a Rust daemon that owns sessions, PTYs, scheduling, worktrees, and persistence.](assets/architecture.png)
+![Proposed Fleet architecture: a replaceable desktop frontend and CLI/MCP adapters connect to a Rust daemon that owns sessions, PTYs, scheduling, worktrees, and persistence.](assets/architecture.png)
 
 The Rust daemon owns agent processes and terminal sessions independently of the desktop UI. Closing the UI detaches the client; running agents continue until they exit or the daemon stops.
 
@@ -23,15 +23,15 @@ The first milestone is one project with two live agent sessions, reliable termin
 
 The workspace uses Rust edition 2024 and Cargo resolver 3:
 
-- `crates/engine` (`director-engine`): engine lifecycle and PTY-backed sessions, independent of clients, transport, and OS signals.
-- `crates/protocol` (`director-protocol`): shared protocol version, serializable daemon states, local API messages, error codes, and size limits.
-- `crates/daemon` (`director-daemon`): runtime, socket configuration, JSON logging, signal handling, and the Unix local API server. It depends on both libraries; the libraries do not depend on each other.
+- `crates/engine` (`fleet-engine`): engine lifecycle and PTY-backed sessions, independent of clients, transport, and OS signals.
+- `crates/protocol` (`fleet-protocol`): shared protocol version, serializable daemon states, local API messages, error codes, and size limits.
+- `crates/daemon` (`fleet-daemon`): runtime, socket configuration, JSON logging, signal handling, and the Unix local API server. It depends on both libraries; the libraries do not depend on each other.
 
 The daemon runs in the foreground without a UI. It starts the engine, binds a user-owned Unix socket, reports readiness, and serves versioned requests from local clients. Clients can create, list, inspect, and stop sessions; attach and detach; stream ordered output and status; send input; and resize. Nothing is persisted across daemon restarts. On Windows the daemon currently starts without a local API.
 
 ## Local API
 
-The local API is Unix-only in this pass. The default socket is `$XDG_RUNTIME_DIR/director/daemon.sock`, or `<system-temp>/director-<uid>/daemon.sock` when `XDG_RUNTIME_DIR` is unset (`$TMPDIR` is used when defined). Precedence is `--socket <path>` / `--socket=<path>`, then `DIRECTOR_SOCKET`, then the default. Relative paths resolve against the working directory; socket paths are limited to 100 bytes. The daemon creates missing parents, keeps the default parent at `0700`, refuses symlinked or foreign-owned parents (including `/tmp` itself), and restricts the socket to `0600`. Use a per-user parent such as `$HOME/.director`. Accepted peers must have the daemon user's UID.
+The local API is Unix-only in this pass. The default socket is `$XDG_RUNTIME_DIR/fleet/daemon.sock`, or `<system-temp>/fleet-<uid>/daemon.sock` when `XDG_RUNTIME_DIR` is unset (`$TMPDIR` is used when defined). Precedence is `--socket <path>` / `--socket=<path>`, then `FLEET_SOCKET`, then the default. Relative paths resolve against the working directory; socket paths are limited to 100 bytes. The daemon creates missing parents, keeps the default parent at `0700`, refuses symlinked or foreign-owned parents (including `/tmp` itself), and restricts the socket to `0600`. Use a per-user parent such as `$HOME/.fleet`. Accepted peers must have the daemon user's UID.
 
 Frames are a 4-byte big-endian length followed by UTF-8 JSON; the limit is 4 MiB per frame. Binary terminal data is base64. The first frame must be a `hello` with protocol version 1 within five seconds. Requests then carry a client-chosen `request_id` and a command: `create_session`, `list_sessions`, `inspect_session`, `stop_session`, `input`, `resize`, `attach_session`, or `detach_session`.
 
@@ -40,14 +40,14 @@ An attach response includes session metadata and a retained output snapshot. Sub
 Start a daemon on an explicit socket and try the API:
 
 ```sh
-cargo run -p director-daemon --locked -- --socket "$HOME/.director/daemon.sock"
+cargo run -p fleet-daemon --locked -- --socket "$HOME/.fleet/daemon.sock"
 ```
 
 ```python
 import json, os, socket, struct
 
 sock = socket.socket(socket.AF_UNIX)
-sock.connect(os.path.expanduser("~/.director/daemon.sock"))
+sock.connect(os.path.expanduser("~/.fleet/daemon.sock"))
 
 def send(message):
     payload = json.dumps(message).encode()
@@ -84,17 +84,17 @@ apps/macos/scripts/build.sh
 apps/macos/scripts/demo.sh
 ```
 
-`demo.sh` builds the app, starts a daemon on `~/.director/daemon.sock` if needed, and opens Director with two agent sessions. The app needs macOS 14+ and Xcode 16+; SwiftTerm 1.99.1 is resolved by Swift Package Manager.
+`demo.sh` builds the app, starts a daemon on `~/.fleet/daemon.sock` if needed, and opens Fleet with two agent sessions. The app needs macOS 14+ and Xcode 16+; SwiftTerm 1.99.1 is resolved by Swift Package Manager.
 
 ## Development scripts
 
 Root-level scripts cover the common development flows:
 
 ```sh
-scripts/dev.sh      # build and launch Director
+scripts/dev.sh      # build and launch Fleet
 scripts/build.sh    # build the daemon and app
 scripts/demo.sh     # two live agent panes
-scripts/test.sh     # Rust workspace and DirectorKit tests
+scripts/test.sh     # Rust workspace and FleetKit tests
 scripts/verify.sh   # formatting, Clippy, tests, smoke checks, app build
 scripts/clean.sh    # remove build artifacts
 ```
@@ -108,14 +108,14 @@ Install a Rust toolchain with Cargo, rustfmt, and Clippy. Rust/Cargo 1.98.0 from
 
 ```sh
 cargo build --workspace --locked
-cargo run -p director-daemon --locked
+cargo run -p fleet-daemon --locked
 ```
 
 Logs are newline-delimited JSON on stderr; stdout is unused. The default log level is INFO. Set `RUST_LOG` to change it, for example:
 
 ```sh
-RUST_LOG=debug cargo run -p director-daemon --locked
-RUST_LOG=director_daemon=info cargo run -p director-daemon --locked
+RUST_LOG=debug cargo run -p fleet-daemon --locked
+RUST_LOG=fleet_daemon=info cargo run -p fleet-daemon --locked
 ```
 
 An invalid `RUST_LOG` exits with status 1 and a JSON error. Filtering out INFO hides readiness and normal lifecycle events. Startup failures and shutdown errors also exit with status 1.
@@ -125,8 +125,8 @@ On Unix, SIGINT (Ctrl-C) and SIGTERM handlers are registered before the `ready` 
 To run the release binary directly:
 
 ```sh
-cargo build -p director-daemon --release --locked
-./target/release/director-daemon
+cargo build -p fleet-daemon --release --locked
+./target/release/fleet-daemon
 ```
 
 ## Test and check
@@ -142,5 +142,5 @@ Tests cover engine shutdown, PTY session lifecycle and I/O, protocol serializati
 
 ## License
 
-Director is released under the [MIT License](LICENSE).
+Fleet is released under the [MIT License](LICENSE).
 

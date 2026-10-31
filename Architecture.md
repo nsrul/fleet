@@ -1,4 +1,4 @@
-# Director Architecture
+# Fleet Architecture
 
 Status: the workspace foundation, daemon lifecycle (issue #1), PTY-backed sessions (issue #2), the Unix local API (issue #3), and a SwiftUI two-pane macOS prototype (issue #4) are implemented. Persistence, ordered replay, and the Windows named-pipe transport are planned for later work.
 
@@ -6,7 +6,7 @@ Companion diagram: `assets/architecture.png`.
 
 ## 1. Purpose
 
-Director is a desktop workspace for running and coordinating coding agents. Agents and shells are owned by a long-lived local daemon, not by the desktop window. Closing the UI detaches the viewer; running processes continue until they exit or the daemon stops.
+Fleet is a desktop workspace for running and coordinating coding agents. Agents and shells are owned by a long-lived local daemon, not by the desktop window. Closing the UI detaches the viewer; running processes continue until they exit or the daemon stops.
 
 The architecture separates process ownership from presentation:
 
@@ -22,10 +22,10 @@ Desktop UI (SwiftUI, prototype) ─┐
 CLI adapter (planned) ─┼─ Unix socket (#3) ──────────┐
 MCP adapter (planned) ─┘                             │
                                                      v
-                                            director-daemon
+                                            fleet-daemon
                                                      │
                                                      v
-                                            director-engine
+                                            fleet-engine
                                                      │
                                                      v
                                                PTY + child
@@ -37,11 +37,11 @@ MCP adapter (planned) ─┘                             │
                                           model provider (direct)
 ```
 
-Installed agent CLIs use their own credentials, permissions, and provider connections. Director launches them; it does not proxy model traffic or duplicate their authentication.
+Installed agent CLIs use their own credentials, permissions, and provider connections. Fleet launches them; it does not proxy model traffic or duplicate their authentication.
 
 ## 3. Component responsibilities
 
-### `director-daemon`
+### `fleet-daemon`
 
 - Long-running foreground process with no UI.
 - Owns the Tokio runtime, configuration, JSON logging, and shutdown signals.
@@ -50,14 +50,14 @@ Installed agent CLIs use their own credentials, permissions, and provider connec
 - Stops the engine with a five-second deadline.
 - Current limitation: Windows has no local transport yet; the daemon starts without an API there.
 
-### `director-engine`
+### `fleet-engine`
 
 - Library independent of clients, transport, and OS signals.
 - Owns the engine lifecycle and the session registry.
 - Provides session spawn, input, output, resize, termination, and exit tracking.
 - Contains no daemon-specific logging setup or socket code.
 
-### `director-protocol`
+### `fleet-protocol`
 
 - Shared protocol version, lifecycle state vocabulary, and local API messages.
 - Defines commands, responses, error codes, output/status events, base64 byte wrappers, and frame/input limits.
@@ -67,7 +67,7 @@ Installed agent CLIs use their own credentials, permissions, and provider connec
 ### macOS frontend (`apps/macos`)
 
 - SwiftUI application shell with AppKit interop for terminal hosting.
-- `DirectorKit` local package contains the typed local API client (`DirectorAPI`) and a CLI probe (`DirectorProbe`).
+- `FleetKit` local package contains the typed local API client (`FleetAPI`) and a CLI probe (`FleetProbe`).
 - `AppModel` owns connection state, sessions, attach/input/resize calls, focus, layout, and git status. `TerminalController` owns each SwiftTerm view and its delegate.
 - SwiftTerm 1.99.1 renders terminal output, scrollback, selection, and keyboard input. The daemon sends raw PTY bytes; the frontend owns emulation.
 - Layout follows the Figma prototype: 256 pt sidebar, terminal panes, 504 pt git context panel, stacked or side-by-side panes.
@@ -129,7 +129,7 @@ A `SessionSpec` contains:
 - environment overrides;
 - initial terminal size.
 
-`CommandBuilder` inherits the daemon's full environment by default. Per-session overrides are layered on top. This preserves `PATH`, `HOME`, agent credentials, and agent-specific configuration without Director reading or storing secrets. Commands are executed directly, without shell wrapping, so arguments are not subject to shell quoting or injection.
+`CommandBuilder` inherits the daemon's full environment by default. Per-session overrides are layered on top. This preserves `PATH`, `HOME`, agent credentials, and agent-specific configuration without Fleet reading or storing secrets. Commands are executed directly, without shell wrapping, so arguments are not subject to shell quoting or injection.
 
 If `TERM` is absent from the inherited environment, the session layer may set `TERM=xterm-256color` so terminal-aware programs have a usable baseline.
 
@@ -197,7 +197,7 @@ Issue #3 adds a versioned API for local clients. The transport is Unix-only in t
 
 ### Transport and ownership
 
-- The default socket is `$XDG_RUNTIME_DIR/director/daemon.sock`, or `<system-temp>/director-<uid>/daemon.sock` when `XDG_RUNTIME_DIR` is unset (`$TMPDIR` is used when defined). `--socket <path>`/`--socket=<path>` overrides `DIRECTOR_SOCKET`, which overrides the default. Relative paths resolve against the working directory, and paths longer than 100 bytes are rejected.
+- The default socket is `$XDG_RUNTIME_DIR/fleet/daemon.sock`, or `<system-temp>/fleet-<uid>/daemon.sock` when `XDG_RUNTIME_DIR` is unset (`$TMPDIR` is used when defined). `--socket <path>`/`--socket=<path>` overrides `FLEET_SOCKET`, which overrides the default. Relative paths resolve against the working directory, and paths longer than 100 bytes are rejected.
 - The daemon creates missing parent directories and restricts the default parent to `0700`. It refuses a symlinked parent, a parent owned by another user (so a socket placed directly in `/tmp` is rejected), a non-socket file at the socket path, or a socket owned by another user.
 - Existing sockets are removed only after a one-second connect probe reports `ConnectionRefused` or `NotFound`. A successful connection means another daemon is live; a timeout aborts startup rather than risking a second daemon.
 - The socket is restricted to `0600`, and each accepted peer is checked with `peer_cred()`; only the daemon user's UID is served. Credential lookup failures and foreign peers are rejected before any protocol message is read.
@@ -305,7 +305,7 @@ At the daemon boundary, engine errors map to stable `ErrorCode` values instead o
 
 ## 10. Security and configuration
 
-- Director does not read, copy, or log agent credentials.
+- Fleet does not read, copy, or log agent credentials.
 - Environment values and terminal bytes are never logged. API error messages are built from metadata, not terminal data.
 - Structured logs may include session ID, program, PID, size, and exit status.
 - Programs are executed directly with explicit arguments; no implicit shell is used.
@@ -376,8 +376,8 @@ cargo metadata --no-deps --format-version 1 --locked
 ```
 
 The macOS prototype adds `apps/macos/scripts/verify-terminal.sh`, which runs the
-`DirectorKit` unit tests, starts a real daemon on a temporary socket, and runs
-`DirectorProbe --smoke` for create, input/output, Unicode, resize, and exit. The
+`FleetKit` unit tests, starts a real daemon on a temporary socket, and runs
+`FleetProbe --smoke` for create, input/output, Unicode, resize, and exit. The
 app-level checklist covers two live panes, keyboard input, Unicode, selection
 and copy, scrollback, pane/window resize, focus switching, and reattachment
 after relaunch. It was exercised with Claude Code 2.1.311 and Gemini CLI 0.46.0

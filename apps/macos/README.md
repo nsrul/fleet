@@ -1,9 +1,9 @@
-# Director for macOS
+# Fleet for macOS
 
-A SwiftUI prototype of the Director desktop workspace. It shows one project with
-two live terminal panes, backed by the Rust `director-daemon` through the
+A SwiftUI prototype of the Fleet desktop workspace. It shows one project with
+two live terminal panes, backed by the Rust `fleet-daemon` through the
 versioned local API. The visual design follows the
-[Director Figma file](https://www.figma.com/design/QSQKCfkfjButfQp2irkhB9/director.?node-id=11-2).
+[Figma file](https://www.figma.com/design/QSQKCfkfjButfQp2irkhB9/director.?node-id=11-2).
 
 This is issue #4's two-pane prototype, not a finished app.
 
@@ -14,8 +14,8 @@ This is issue #4's two-pane prototype, not a finished app.
   older macOS versions were not tested.
 - Xcode 16 or newer with Swift 6. The prototype was built with Xcode 27.1 /
   Swift 6.4 in Swift 6 language mode with complete concurrency checking.
-- Rust toolchain for `director-daemon` (edition 2024, Rust 1.85+).
-- XcodeGen is optional. The generated `Director.xcodeproj` is checked in; install
+- Rust toolchain for `fleet-daemon` (edition 2024, Rust 1.85+).
+- XcodeGen is optional. The generated `Fleet.xcodeproj` is checked in; install
   XcodeGen (`brew install xcodegen`) only if you change `project.yml`.
 
 The app is ad-hoc signed and not sandboxed. It is a local development build, not
@@ -52,25 +52,25 @@ apps/macos/scripts/run.sh
 ```
 
 `build.sh` builds the Rust daemon, regenerates the Xcode project when XcodeGen
-is installed, and builds `Director.app` into `apps/macos/.build`. `run.sh`
-starts a daemon on `~/.director/daemon.sock` if one is not already listening,
+is installed, and builds `Fleet.app` into `apps/macos/.build`. `run.sh`
+starts a daemon on `~/.fleet/daemon.sock` if one is not already listening,
 then opens the app.
 
 To build manually:
 
 ```sh
-cargo build -p director-daemon --locked
+cargo build -p fleet-daemon --locked
 cd apps/macos
 xcodebuild \
-  -project Director.xcodeproj \
-  -scheme Director \
+  -project Fleet.xcodeproj \
+  -scheme Fleet \
   -configuration Debug \
   -derivedDataPath .build \
   -skipPackagePluginValidation \
   -skipMacroValidation \
   build \
   CODE_SIGNING_ALLOWED=NO
-open .build/Build/Products/Debug/Director.app
+open .build/Build/Products/Debug/Fleet.app
 ```
 
 The `-skipPackagePluginValidation` and `-skipMacroValidation` flags avoid
@@ -78,13 +78,13 @@ interactive prompts for SwiftTerm's build-tool plugin in local builds.
 
 ### Daemon and environment
 
-The app connects to `~/.director/daemon.sock` by default. `DIRECTOR_SOCKET`
+The app connects to `~/.fleet/daemon.sock` by default. `FLEET_SOCKET`
 overrides the path. If nothing is listening and auto-start is enabled, the app
-looks for `director-daemon` in this order: `DIRECTOR_DAEMON`, the app bundle's
-resources, `target/debug`, `target/release`, `~/.director/bin`, Homebrew paths,
-and `PATH`. Daemon logs go to `~/Library/Logs/Director/daemon.log`.
+looks for `fleet-daemon` in this order: `FLEET_DAEMON`, the app bundle's
+resources, `target/debug`, `target/release`, `~/.fleet/bin`, Homebrew paths,
+and `PATH`. Daemon logs go to `~/Library/Logs/Fleet/daemon.log`.
 
-New sessions use the selected working directory. `DIRECTOR_WORKDIR` supplies the
+New sessions use the selected working directory. `FLEET_WORKDIR` supplies the
 default when the app starts. The agent picker offers installed CLIs from
 `AgentCatalog` plus a custom command.
 
@@ -95,7 +95,7 @@ apps/macos/scripts/demo.sh
 ```
 
 The script builds the app, starts a daemon if needed, creates two sessions with
-the same working directory, and opens Director. It prefers Claude Code and
+the same working directory, and opens Fleet. It prefers Claude Code and
 Codex, falls back to Claude Code and Gemini CLI, and finally to two shells. The
 session IDs are `demo-claude` / `demo-codex` or `demo-claude` / `demo-gemini`
 (or `demo-shell-1` / `demo-shell-2`). Existing demo sessions are stopped first.
@@ -122,8 +122,8 @@ switch to side-by-side, or the keyboard shortcuts below.
 apps/macos/scripts/verify-terminal.sh
 ```
 
-The script runs the `DirectorKit` unit tests, starts a real daemon on a temporary
-socket, and runs `DirectorProbe --smoke`. The smoke test checks create, input,
+The script runs the `FleetKit` unit tests, starts a real daemon on a temporary
+socket, and runs `FleetProbe --smoke`. The smoke test checks create, input,
 output, Unicode (`café 日本語`), resize, and exit. It then prints the manual UI
 checklist.
 
@@ -178,16 +178,16 @@ scroll keys or `Page Up` / `Page Down` in that state.
 
 ```text
 apps/macos/
-  Director/                 SwiftUI app
+  Fleet/                 SwiftUI app
     App/AppModel.swift      connection, sessions, attach/input/resize, git state
     Terminal/               SwiftTerm bridge, controller, delegate
     UI/                     sidebar, panes, context panel, sheets, theme
     Services/               agent catalog, daemon launcher, git reader
     Resources/              app icon
-  DirectorKit/              local Swift package
-    Sources/DirectorAPI/    local API client and protocol types
-    Sources/DirectorProbe/  CLI smoke test and session helper
-    Tests/DirectorAPITests/ unit tests
+  FleetKit/              local Swift package
+    Sources/FleetAPI/    local API client and protocol types
+    Sources/FleetProbe/  CLI smoke test and session helper
+    Tests/FleetAPITests/ unit tests
   scripts/                  build, run, demo, verify
   project.yml               XcodeGen source of truth
 ```

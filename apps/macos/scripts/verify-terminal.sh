@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(cd "$APP_DIR/../.." && pwd)"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/director-verify.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/fleet-verify.XXXXXX")"
 SOCKET="$TMP/daemon.sock"
 DAEMON_PID=""
 
@@ -17,16 +17,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "== DirectorKit unit tests"
-(cd "$APP_DIR/DirectorKit" && swift test)
+echo "== FleetKit unit tests"
+(cd "$APP_DIR/FleetKit" && swift test)
 
 echo
-echo "== Build director-daemon"
-(cd "$ROOT" && cargo build -p director-daemon --locked)
+echo "== Build fleet-daemon"
+(cd "$ROOT" && cargo build -p fleet-daemon --locked)
 
 echo
 echo "== Protocol smoke test against a real daemon"
-"$ROOT/target/debug/director-daemon" --socket "$SOCKET" > "$TMP/daemon.log" 2>&1 &
+"$ROOT/target/debug/fleet-daemon" --socket "$SOCKET" > "$TMP/daemon.log" 2>&1 &
 DAEMON_PID=$!
 for _ in $(seq 1 30); do
   [ -S "$SOCKET" ] && break
@@ -38,7 +38,7 @@ if [ ! -S "$SOCKET" ]; then
   exit 1
 fi
 
-(cd "$APP_DIR/DirectorKit" && swift run DirectorProbe --socket "$SOCKET" --smoke)
+(cd "$APP_DIR/FleetKit" && swift run FleetProbe --socket "$SOCKET" --smoke)
 
 cat <<'EOF'
 
@@ -54,7 +54,7 @@ Run `scripts/demo.sh`, then verify in the two live panes:
      may capture wheel events while mouse reporting is enabled.
   5. Resize: resize the window or drag the pane divider. The status bar columns
      and rows update and the agent TUI reflows.
-  6. Reattach: quit Director, reopen it, and confirm both agent processes are
+  6. Reattach: quit Fleet, reopen it, and confirm both agent processes are
      still running and their output is replayed.
 
 The prototype was verified on macOS 27 with Claude Code 2.1.311 and Gemini CLI

@@ -10,8 +10,8 @@ use std::{env, process::ExitCode, sync::Arc, time::Duration};
 #[cfg(unix)]
 use anyhow::anyhow;
 use anyhow::{Context, Result};
-use director_engine::{Engine, EngineState};
-use director_protocol::{DaemonState, PROTOCOL_VERSION};
+use fleet_engine::{Engine, EngineState};
+use fleet_protocol::{DaemonState, PROTOCOL_VERSION};
 use signals::ShutdownSignals;
 use tokio::sync::Mutex;
 use tracing::{error, info, level_filters::LevelFilter};

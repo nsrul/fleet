@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use director_protocol::{DaemonState, PROTOCOL_VERSION};
+use fleet_protocol::{DaemonState, PROTOCOL_VERSION};
 use support::{Daemon, WAIT_LIMIT};
 
 fn clean_signal_shutdown(signal: i32, reason: &str, filter: Option<&str>) {
@@ -48,12 +48,12 @@ fn sigint_shuts_down_without_a_ui() {
 
 #[test]
 fn sigterm_shuts_down_with_a_rust_log_override() {
-    clean_signal_shutdown(libc::SIGTERM, "SIGTERM", Some("director_daemon=debug"));
+    clean_signal_shutdown(libc::SIGTERM, "SIGTERM", Some("fleet_daemon=debug"));
 }
 
 #[test]
 fn invalid_rust_log_fails_with_a_json_error() {
-    let mut daemon = Daemon::spawn(Some("director_daemon=invalid-level"));
+    let mut daemon = Daemon::spawn(Some("fleet_daemon=invalid-level"));
     let deadline = Instant::now() + WAIT_LIMIT;
     let error = daemon.log(deadline);
     assert_eq!(error["event"], "error");

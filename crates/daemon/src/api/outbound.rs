@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use director_protocol::api::ServerMessage;
+use fleet_protocol::api::ServerMessage;
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
     sync::{Semaphore, mpsc, watch},
@@ -94,7 +94,7 @@ pub async fn write_loop<W>(
 
 #[cfg(test)]
 mod tests {
-    use director_protocol::api::{Base64Bytes, Event, ServerMessage};
+    use fleet_protocol::api::{Base64Bytes, Event, ServerMessage};
 
     use super::{OUTBOUND_QUEUE_FRAMES, Outbound, OutboundError};
 
