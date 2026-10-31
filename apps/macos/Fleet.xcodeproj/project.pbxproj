@@ -11,6 +11,7 @@
 		0D246EB71B087B1691006F35 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8D86FF4284B57A36E0A5DE24 /* Assets.xcassets */; };
 		107665118E830BB088836256 /* FleetAPI in Frameworks */ = {isa = PBXBuildFile; productRef = BE57F7AE00F4C8C72AE3A232 /* FleetAPI */; };
 		1EAE0C08A2AFF2B6A92722B9 /* ContextPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 484119FE72EF462E66228A49 /* ContextPanelView.swift */; };
+		26745FF90D096984AFE879EB /* TerminalFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0BE833F68BC553546DA2BF /* TerminalFont.swift */; };
 		2BEB17A9980A7937CD4DBC7F /* DaemonLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85343EA7A7BA41C4E21E7957 /* DaemonLauncher.swift */; };
 		34206BC65CD9FC00F732384B /* Fleet.icns in Resources */ = {isa = PBXBuildFile; fileRef = D4C8FC928C7647044BAFEB21 /* Fleet.icns */; };
 		3718DE84C778244F8EFD4F23 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7057DA52D27913E1D3526C /* ConnectionView.swift */; };
@@ -25,6 +26,7 @@
 		B1CC79E83848B04546AF91C0 /* TerminalHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 871E4C8B27623F3D2757925B /* TerminalHostView.swift */; };
 		B4D8F15DCF28023F64E0839A /* UserNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = B58FFE1EF1BBA9D15EFFC2D0 /* UserNotice.swift */; };
 		B685083AD8536A2DF3E50E20 /* PanelLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF9999C19AD118E18E796F39 /* PanelLayout.swift */; };
+		C6098BD858D810DC888F935F /* SettingsPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB9E41730C985DF8E35BC16 /* SettingsPanes.swift */; };
 		CBC4AE6FF0107F9397EB76F6 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BCBA3F5A5F6EABB50CE9281 /* AppModel.swift */; };
 		D756C398FE4533275A8C77E8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85642D6731633203E2C30172 /* SettingsView.swift */; };
 		EB6E26BDFCC3E5DD599797EF /* FleetApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C329FAEED4F1EDF600180595 /* FleetApp.swift */; };
@@ -37,8 +39,10 @@
 		01F035D9F49A6AFCA8FE3495 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		0F7057DA52D27913E1D3526C /* ConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionView.swift; sourceTree = "<group>"; };
 		1A1B6F64E7A3960A31BBFFD9 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		1BB9E41730C985DF8E35BC16 /* SettingsPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPanes.swift; sourceTree = "<group>"; };
 		2CE1CF52BE4D30DC72816827 /* FleetKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = FleetKit; path = FleetKit; sourceTree = SOURCE_ROOT; };
 		484119FE72EF462E66228A49 /* ContextPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextPanelView.swift; sourceTree = "<group>"; };
+		4B0BE833F68BC553546DA2BF /* TerminalFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFont.swift; sourceTree = "<group>"; };
 		6984C181ACCC3F30C4E2FBEF /* NewAgentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewAgentSheet.swift; sourceTree = "<group>"; };
 		6BCBA3F5A5F6EABB50CE9281 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		8077A6471D75FC1652EB1D51 /* GitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitService.swift; sourceTree = "<group>"; };
@@ -77,6 +81,7 @@
 			isa = PBXGroup;
 			children = (
 				DA8A45647CE4DC7AC70CDE5D /* TerminalController.swift */,
+				4B0BE833F68BC553546DA2BF /* TerminalFont.swift */,
 				871E4C8B27623F3D2757925B /* TerminalHostView.swift */,
 			);
 			path = Terminal;
@@ -126,6 +131,7 @@
 				6984C181ACCC3F30C4E2FBEF /* NewAgentSheet.swift */,
 				CF9999C19AD118E18E796F39 /* PanelLayout.swift */,
 				1A1B6F64E7A3960A31BBFFD9 /* RootView.swift */,
+				1BB9E41730C985DF8E35BC16 /* SettingsPanes.swift */,
 				85642D6731633203E2C30172 /* SettingsView.swift */,
 				01F035D9F49A6AFCA8FE3495 /* SidebarView.swift */,
 				DB7773FB40FDCB7F750DD7EA /* TerminalAreaView.swift */,
@@ -280,10 +286,12 @@
 				F71E012F09F1EA72CB0A2401 /* NewAgentSheet.swift in Sources */,
 				B685083AD8536A2DF3E50E20 /* PanelLayout.swift in Sources */,
 				F688640591D768643BC17D66 /* RootView.swift in Sources */,
+				C6098BD858D810DC888F935F /* SettingsPanes.swift in Sources */,
 				D756C398FE4533275A8C77E8 /* SettingsView.swift in Sources */,
 				0934BA68EF6040A027DA0756 /* SidebarView.swift in Sources */,
 				F68BE6BCEC2FCEFC56950C56 /* TerminalAreaView.swift in Sources */,
 				5F0CF8BA4DBC006F8FE5E3FE /* TerminalController.swift in Sources */,
+				26745FF90D096984AFE879EB /* TerminalFont.swift in Sources */,
 				B1CC79E83848B04546AF91C0 /* TerminalHostView.swift in Sources */,
 				6A497CA959385417B2F8816A /* TerminalPaneView.swift in Sources */,
 				6E1A67C0F08DD0534DF37749 /* Theme.swift in Sources */,

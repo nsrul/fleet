@@ -66,6 +66,75 @@ enum SessionFilter: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Preferences for the middle terminal panel. SwiftTerm types stay in the controller.
+struct TerminalPreferences: Equatable, Sendable {
+    var fontID: String
+    var fontSize: Double
+    var cursorTag: String
+    var lineSpacing: Double
+    var scrollback: Int
+    var optionIsMeta: Bool
+    var bellSound: Bool
+
+    static let standard = TerminalPreferences(
+        fontID: TerminalFont.systemID,
+        fontSize: 16,
+        cursorTag: "blinkBlock",
+        lineSpacing: 1,
+        scrollback: 20_000,
+        optionIsMeta: true,
+        bellSound: true
+    )
+
+    static let spacings: [Double] = [1, 1.15, 1.35]
+    static let scrollbacks: [Int] = [5_000, 20_000, 50_000, 100_000]
+    private static let cursorTags: Set<String> = [
+        "blinkBlock", "steadyBlock",
+        "blinkUnderline", "steadyUnderline",
+        "blinkBar", "steadyBar",
+    ]
+
+    func clamped() -> TerminalPreferences {
+        var copy = self
+        if copy.fontID.isEmpty { copy.fontID = Self.standard.fontID }
+        if !copy.fontSize.isFinite {
+            copy.fontSize = Self.standard.fontSize
+        } else {
+            copy.fontSize = min(18, max(10, copy.fontSize.rounded()))
+        }
+        if !Self.cursorTags.contains(copy.cursorTag) {
+            copy.cursorTag = Self.standard.cursorTag
+        }
+        if let match = Self.spacings.first(where: { abs($0 - copy.lineSpacing) < 0.001 }) {
+            copy.lineSpacing = match
+        } else {
+            copy.lineSpacing = Self.standard.lineSpacing
+        }
+        if !Self.scrollbacks.contains(copy.scrollback) {
+            copy.scrollback = Self.standard.scrollback
+        }
+        return copy
+    }
+
+    static func tag(shape: String, blinks: Bool) -> String {
+        switch shape {
+        case "underline": return blinks ? "blinkUnderline" : "steadyUnderline"
+        case "bar": return blinks ? "blinkBar" : "steadyBar"
+        default: return blinks ? "blinkBlock" : "steadyBlock"
+        }
+    }
+
+    static func shape(of tag: String) -> String {
+        if tag.contains("Underline") { return "underline" }
+        if tag.contains("Bar") { return "bar" }
+        return "block"
+    }
+
+    static func blinks(_ tag: String) -> Bool {
+        tag.hasPrefix("blink")
+    }
+}
+
 enum AppAppearance: String, CaseIterable, Identifiable, Sendable {
     case light
     case dark
@@ -135,7 +204,30 @@ final class AppModel {
     var errorNotice: UserNotice?
     var isStartingDaemon = false
     var gitSnapshots: [String: GitSnapshot] = [:]
-    var terminalFontSize: Double = 16
+    var terminal: TerminalPreferences = .standard {
+        didSet {
+            let clamped = terminal.clamped()
+            if clamped != terminal {
+                terminal = clamped
+                return
+            }
+            persistTerminal(clamped)
+            for controller in controllers.values {
+                controller.apply(clamped)
+            }
+        }
+    }
+    /// Layout used the next time the app launches. The live split is separate.
+    var defaultSplitLayout: SplitLayout = .stacked {
+        didSet { UserDefaults.standard.set(defaultSplitLayout.rawValue, forKey: Self.defaultSplitKey) }
+    }
+    var confirmStop = true {
+        didSet { UserDefaults.standard.set(confirmStop, forKey: Self.confirmStopKey) }
+    }
+    /// Empty means a new agent starts in the last directory that was used.
+    var pinnedWorkingDirectory = "" {
+        didSet { UserDefaults.standard.set(pinnedWorkingDirectory, forKey: Self.pinnedDirectoryKey) }
+    }
     /// Names shown for sessions. The daemon keeps the id; this is the label.
     var sessionNames: [String: String] = [:] {
         didSet { UserDefaults.standard.set(sessionNames, forKey: Self.sessionNamesKey) }
@@ -166,11 +258,20 @@ final class AppModel {
 
     private static let socketKey = "fleet.socketPath"
     private static let autoStartKey = "fleet.autoStartDaemon"
+    private static let fontIDKey = "fleet.terminalFontID"
     private static let fontSizeKey = "fleet.terminalFontSize"
+    private static let cursorKey = "fleet.terminalCursor"
+    private static let spacingKey = "fleet.terminalLineSpacing"
+    private static let scrollbackKey = "fleet.terminalScrollback"
+    private static let optionMetaKey = "fleet.terminalOptionAsMeta"
+    private static let bellKey = "fleet.terminalBellSound"
     private static let showSidebarKey = "fleet.showSidebar"
     private static let showContextKey = "fleet.showContext"
     private static let sessionNamesKey = "fleet.sessionNames"
     private static let panelSolidityKey = "fleet.panelSolidity"
+    private static let defaultSplitKey = "fleet.defaultSplitLayout"
+    private static let confirmStopKey = "fleet.confirmStop"
+    private static let pinnedDirectoryKey = "fleet.pinnedWorkingDirectory"
 
     init() {
         let defaults = UserDefaults.standard
@@ -180,13 +281,57 @@ final class AppModel {
             socketPath = defaults.string(forKey: Self.socketKey) ?? FleetPaths.defaultSocketPath
         }
         autoStartDaemon = defaults.object(forKey: Self.autoStartKey) as? Bool ?? true
-        terminalFontSize = defaults.object(forKey: Self.fontSizeKey) as? Double ?? 16
+        terminal = Self.loadTerminal(from: defaults)
         showSidebar = defaults.object(forKey: Self.showSidebarKey) as? Bool ?? true
         showContext = defaults.object(forKey: Self.showContextKey) as? Bool ?? true
         sessionNames = defaults.dictionary(forKey: Self.sessionNamesKey) as? [String: String] ?? [:]
         if let stored = defaults.object(forKey: Self.panelSolidityKey) as? Double {
             panelSolidity = min(1, max(0, stored))
         }
+        if let raw = defaults.string(forKey: Self.defaultSplitKey),
+           let layout = SplitLayout(rawValue: raw) {
+            defaultSplitLayout = layout
+            splitLayout = layout
+        }
+        confirmStop = defaults.object(forKey: Self.confirmStopKey) as? Bool ?? true
+        pinnedWorkingDirectory = defaults.string(forKey: Self.pinnedDirectoryKey) ?? ""
+    }
+
+    private static func loadTerminal(from defaults: UserDefaults) -> TerminalPreferences {
+        var prefs = TerminalPreferences.standard
+        if let id = defaults.string(forKey: fontIDKey), !id.isEmpty {
+            prefs.fontID = id
+        }
+        if let size = defaults.object(forKey: fontSizeKey) as? Double {
+            prefs.fontSize = size
+        }
+        if let tag = defaults.string(forKey: cursorKey), !tag.isEmpty {
+            prefs.cursorTag = tag
+        }
+        if let spacing = defaults.object(forKey: spacingKey) as? Double {
+            prefs.lineSpacing = spacing
+        }
+        if let lines = defaults.object(forKey: scrollbackKey) as? Int {
+            prefs.scrollback = lines
+        }
+        if let meta = defaults.object(forKey: optionMetaKey) as? Bool {
+            prefs.optionIsMeta = meta
+        }
+        if let bell = defaults.object(forKey: bellKey) as? Bool {
+            prefs.bellSound = bell
+        }
+        return prefs.clamped()
+    }
+
+    private func persistTerminal(_ prefs: TerminalPreferences) {
+        let defaults = UserDefaults.standard
+        defaults.set(prefs.fontID, forKey: Self.fontIDKey)
+        defaults.set(prefs.fontSize, forKey: Self.fontSizeKey)
+        defaults.set(prefs.cursorTag, forKey: Self.cursorKey)
+        defaults.set(prefs.lineSpacing, forKey: Self.spacingKey)
+        defaults.set(prefs.scrollback, forKey: Self.scrollbackKey)
+        defaults.set(prefs.optionIsMeta, forKey: Self.optionMetaKey)
+        defaults.set(prefs.bellSound, forKey: Self.bellKey)
     }
 
     // MARK: - Derived state
@@ -645,12 +790,16 @@ final class AppModel {
     }
 
     func requestStop(_ sessionID: String) {
-        pendingStopID = sessionID
+        if confirmStop {
+            pendingStopID = sessionID
+        } else {
+            stopSession(sessionID)
+        }
     }
 
     func requestStopFocused() {
         if let id = focusedSession?.id {
-            pendingStopID = id
+            requestStop(id)
         }
     }
 
@@ -887,7 +1036,7 @@ final class AppModel {
         if let controller = controllers[sessionID] {
             return controller
         }
-        let controller = TerminalController(sessionID: sessionID, fontSize: terminalFontSize)
+        let controller = TerminalController(sessionID: sessionID, preferences: terminal)
         controller.onInput = { [weak self] data in
             self?.enqueueInput(data, for: sessionID)
         }
@@ -1015,12 +1164,19 @@ final class AppModel {
         controller(for: id).clear()
     }
 
-    func setTerminalFontSize(_ size: Double) {
-        terminalFontSize = min(max(size, 10), 18)
-        UserDefaults.standard.set(terminalFontSize, forKey: Self.fontSizeKey)
-        for controller in controllers.values {
-            controller.setFontSize(CGFloat(terminalFontSize))
-        }
+    func choosePinnedDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        let current = pinnedWorkingDirectory.isEmpty
+            ? Self.defaultWorkingDirectory
+            : pinnedWorkingDirectory
+        panel.directoryURL = URL(fileURLWithPath: current, isDirectory: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        pinnedWorkingDirectory = url.path
     }
 
     func setSocketPath(_ path: String) {
@@ -1174,6 +1330,10 @@ final class AppModel {
         if let env = ProcessInfo.processInfo.environment["FLEET_WORKDIR"], !env.isEmpty {
             return NSString(string: env).expandingTildeInPath
         }
+        if let pinned = UserDefaults.standard.string(forKey: "fleet.pinnedWorkingDirectory"),
+           directoryExists(pinned) {
+            return pinned
+        }
         if let saved = UserDefaults.standard.string(forKey: "fleet.lastWorkingDirectory"),
            FileManager.default.fileExists(atPath: saved) {
             return saved
@@ -1187,5 +1347,11 @@ final class AppModel {
             }
         }
         return home
+    }
+
+    private static func directoryExists(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
     }
 }

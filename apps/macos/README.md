@@ -154,7 +154,8 @@ scroll keys or `Page Up` / `Page Down` in that state.
 - 504 pt context panel with branch and working-tree changes read from git, plus
   Changes/Artifacts tabs.
 - New-agent sheet with agent presets, working directory, and optional name.
-- Settings for appearance (Light/Dark/System), terminal font size, socket path,
+- Settings for appearance, terminal font, cursor, spacing, and scrollback,
+  the launch split, stop confirmation, the new-agent folder, the socket path,
   and daemon auto-start.
 - Reconnect flow and an empty state when the daemon is unavailable.
 
