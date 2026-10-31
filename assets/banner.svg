@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+<rect width="1280" height="400" fill="#0B1020"/>
+<g fill="#FFFFFF">
+<circle cx="60" cy="48" r="1.4" fill-opacity="0.7"/><circle cx="150" cy="96" r="1" fill-opacity="0.5"/><circle cx="240" cy="34" r="1.2" fill-opacity="0.6"/><circle cx="380" cy="70" r="0.9" fill-opacity="0.45"/><circle cx="470" cy="28" r="1.3" fill-opacity="0.65"/><circle cx="560" cy="110" r="1" fill-opacity="0.4"/><circle cx="640" cy="52" r="1.4" fill-opacity="0.7"/><circle cx="720" cy="140" r="0.9" fill-opacity="0.4"/><circle cx="780" cy="36" r="1.1" fill-opacity="0.6"/><circle cx="860" cy="88" r="1" fill-opacity="0.5"/><circle cx="1230" cy="40" r="1.2" fill-opacity="0.6"/><circle cx="1250" cy="170" r="1" fill-opacity="0.45"/><circle cx="690" cy="230" r="0.9" fill-opacity="0.35"/><circle cx="560" cy="250" r="1" fill-opacity="0.35"/><circle cx="40" cy="300" r="1" fill-opacity="0.35"/><circle cx="330" cy="150" r="0.8" fill-opacity="0.35"/><circle cx="900" cy="190" r="0.8" fill-opacity="0.35"/></g>
+
+<g transform="translate(820 -14) scale(1.7)">
+<circle cx="200" cy="62" r="38" fill="#FF1493" fill-opacity="0.1"/>
+<circle cx="200" cy="62" r="26" fill="#FF1493" fill-opacity="0.22"/>
+<circle cx="200" cy="62" r="16" fill="#FF1493"/>
+<circle cx="195" cy="57" r="6" fill="#FFFFFF" fill-opacity="0.25"/>
+<path d="M64 186 L104 70 L98 186 Z" fill="#0EA5E9"/>
+<path d="M98 186 L104 70 L124 186 Z" fill="#0EA5E9" fill-opacity="0.78"/>
+<path d="M98 190 L146 44 L140 190 Z" fill="#0EA5E9" fill-opacity="0.68"/>
+<path d="M140 190 L146 44 L174 190 Z" fill="#0EA5E9" fill-opacity="0.45"/>
+<path d="M134 196 L188 62 L182 196 Z" fill="#FF1493"/>
+<path d="M182 196 L188 62 L214 196 Z" fill="#FF1493" fill-opacity="0.78"/>
+<path d="M104 70 L98 186 M146 44 L140 190 M188 62 L182 196" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="0.8"/>
+<path d="M189 140 L199 150 L189 160" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M60 188 H128 L120 198 H68 Z" fill="#0EA5E9"/>
+<path d="M94 192 H178 L168 202 H104 Z" fill="#0EA5E9" fill-opacity="0.85"/>
+<path d="M128 198 H220 L208 210 H140 Z" fill="#FF1493"/>
+</g>
+
+<path d="M0 346 L80 336 L170 350 L260 338 L360 352 L460 340 L560 352 L660 338 L760 350 L860 336 L960 350 L1060 340 L1160 352 L1280 338 V400 H0 Z" fill="#0EA5E9" fill-opacity="0.2"/>
+<path d="M1062 354 L1172 354 L1148 386 L1088 386 Z" fill="#FF1493" fill-opacity="0.38"/>
+<path d="M0 366 L90 356 L190 370 L300 358 L410 372 L520 360 L630 372 L740 358 L850 370 L960 358 L1070 372 L1180 360 L1280 368 V400 H0 Z" fill="#0EA5E9" fill-opacity="0.38"/>
+<path d="M0 386 L110 376 L230 390 L350 378 L470 390 L590 378 L710 390 L830 378 L950 390 L1070 378 L1190 390 L1280 382 V400 H0 Z" fill="#0EA5E9" fill-opacity="0.7"/>
+
+<text x="100" y="222" font-family="Menlo, 'SF Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="128" font-weight="700" letter-spacing="-2" fill="#0EA5E9" fill-opacity="0.55">fleet</text>
+<text x="96" y="218" font-family="Menlo, 'SF Mono', Consolas, 'DejaVu Sans Mono', monospace" font-size="128" font-weight="700" letter-spacing="-2" fill="#FFFFFF">fleet</text>
+<rect x="490" y="150" width="54" height="68" fill="#FF1493"/>
+<text x="100" y="276" font-size="28" fill="#0EA5E9">Agents in formation.</text>
+</svg>
