@@ -10,6 +10,7 @@ Run them from anywhere; each resolves the repository root itself.
 | `scripts/install.sh` | Builds a release from this checkout, quits Fleet, stops `fleet-daemon`, removes older installs, and installs `Fleet.app` and `fleet-daemon`. |
 | `scripts/run.sh` | Builds if needed, starts a daemon when necessary, and opens Fleet. |
 | `scripts/demo.sh` | Opens Fleet with two live agent sessions. |
+| `scripts/preview.sh` | Opens a UI-only Fleet window for screenshots, with Claude Code sessions and no daemon. |
 | `scripts/test.sh` | Runs the Rust workspace tests and the `FleetKit` tests. |
 | `scripts/verify.sh` | Runs formatting, Clippy, tests, protocol smoke checks, and the app build. |
 | `scripts/clean.sh` | Removes Rust and macOS build artifacts. Keeps the generated Xcode project. |
@@ -31,6 +32,12 @@ Two live panes with installed agent CLIs:
 
 ```sh
 scripts/demo.sh
+```
+
+A screenshot window filled with Claude Code sessions. It does not start the daemon:
+
+```sh
+scripts/preview.sh
 ```
 
 Before opening a pull request:

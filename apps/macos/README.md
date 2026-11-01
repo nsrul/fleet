@@ -103,6 +103,16 @@ session IDs are `demo-claude` / `demo-codex` or `demo-claude` / `demo-gemini`
 The layout defaults to stacked panes. Use the layout control in the toolbar to
 switch to side-by-side, or the keyboard shortcuts below.
 
+## Screenshot preview
+
+```sh
+scripts/preview.sh
+```
+
+`FLEET_PREVIEW=1` fills the window with Claude Code sessions and paints the
+Claude Code screen in the terminal. The daemon is not started, and a Fleet
+window that is already open is left alone.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |

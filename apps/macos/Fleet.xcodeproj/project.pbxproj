@@ -31,6 +31,7 @@
 		C6098BD858D810DC888F935F /* SettingsPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB9E41730C985DF8E35BC16 /* SettingsPanes.swift */; };
 		CBC4AE6FF0107F9397EB76F6 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BCBA3F5A5F6EABB50CE9281 /* AppModel.swift */; };
 		D756C398FE4533275A8C77E8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85642D6731633203E2C30172 /* SettingsView.swift */; };
+		E8FC78546D2DEA600449215E /* ClaudePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0B004130C9B43A122F190E /* ClaudePreview.swift */; };
 		EB6E26BDFCC3E5DD599797EF /* FleetApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C329FAEED4F1EDF600180595 /* FleetApp.swift */; };
 		F688640591D768643BC17D66 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1B6F64E7A3960A31BBFFD9 /* RootView.swift */; };
 		F68BE6BCEC2FCEFC56950C56 /* TerminalAreaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB7773FB40FDCB7F750DD7EA /* TerminalAreaView.swift */; };
@@ -66,6 +67,7 @@
 		DA8A45647CE4DC7AC70CDE5D /* TerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalController.swift; sourceTree = "<group>"; };
 		DB7773FB40FDCB7F750DD7EA /* TerminalAreaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAreaView.swift; sourceTree = "<group>"; };
 		DF51DA43BD25101D2EF80906 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		ED0B004130C9B43A122F190E /* ClaudePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudePreview.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -130,6 +132,7 @@
 		9F6D1F6E2CAFD4A32386E5EC /* UI */ = {
 			isa = PBXGroup;
 			children = (
+				ED0B004130C9B43A122F190E /* ClaudePreview.swift */,
 				0F7057DA52D27913E1D3526C /* ConnectionView.swift */,
 				81F228E68217B49243E02801 /* ContextDiffView.swift */,
 				484119FE72EF462E66228A49 /* ContextPanelView.swift */,
@@ -284,6 +287,7 @@
 			files = (
 				4D7D342C912B6E48CDBA5766 /* AgentCatalog.swift in Sources */,
 				CBC4AE6FF0107F9397EB76F6 /* AppModel.swift in Sources */,
+				E8FC78546D2DEA600449215E /* ClaudePreview.swift in Sources */,
 				3718DE84C778244F8EFD4F23 /* ConnectionView.swift in Sources */,
 				0D9402633FB1114DD1C0427F /* ContextDiffView.swift in Sources */,
 				1EAE0C08A2AFF2B6A92722B9 /* ContextPanelView.swift in Sources */,
