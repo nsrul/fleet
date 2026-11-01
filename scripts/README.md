@@ -13,7 +13,7 @@ Run them from anywhere; each resolves the repository root itself.
 | `scripts/test.sh` | Runs the Rust workspace tests and the `FleetKit` tests. |
 | `scripts/verify.sh` | Runs formatting, Clippy, tests, protocol smoke checks, and the app build. |
 | `scripts/clean.sh` | Removes Rust and macOS build artifacts. Keeps the generated Xcode project. |
-| `scripts/release.sh` | Builds a Release `Fleet.app` with the release daemon, signs it, and zips it under `dist/`. |
+| `scripts/release.sh` | Builds a Release `Fleet.app` with the release daemon, signs it, and writes a zip and a dmg under `dist/`. |
 
 The macOS-specific implementations live in `apps/macos/scripts/`. The root
 scripts are stable entry points so the commands do not change if the app layout

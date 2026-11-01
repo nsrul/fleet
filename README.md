@@ -99,7 +99,7 @@ scripts/demo.sh     # two live agent panes
 scripts/test.sh     # Rust workspace and FleetKit tests
 scripts/verify.sh   # formatting, Clippy, tests, smoke checks, app build
 scripts/clean.sh    # remove build artifacts
-scripts/release.sh  # release app zip; optional Developer ID signing
+scripts/release.sh  # release app zip and dmg; optional Developer ID signing
 ```
 
 See [`scripts/README.md`](scripts/README.md) for details and environment
