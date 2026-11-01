@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build a release Fleet.app, optionally Developer ID-sign it, and zip it.
+# Build a release Fleet.app, optionally Developer ID-sign it, and package it
+# as a zip and a dmg.
 # Entry point: scripts/release.sh
 set -euo pipefail
 
@@ -14,15 +15,17 @@ usage() {
 Usage: scripts/release.sh [--sign IDENTITY]
 
 Build the release fleet-daemon and Fleet.app, sign the bundle, and write
-dist/Fleet-<version>-macos-<arch>.zip.
+dist/Fleet-<version>-macos-<arch>.zip and dist/Fleet-<version>-macos-<arch>.dmg.
+Both archives hold the same signed app; the dmg also has an Applications
+shortcut for drag-to-install.
 
   --sign IDENTITY   Codesign with this identity. Use the full certificate name:
                       --sign "Developer ID Application: Name (TEAMID)"
                     "-" signs ad-hoc, which is also the default.
 
 Without --sign the app is ad-hoc signed so it runs on this Mac. A Developer ID
-signature is not notarized; Gatekeeper still blocks that zip on other Macs
-until it is notarized.
+signature is not notarized; Gatekeeper still blocks both archives on other
+Macs until they are notarized.
 
 The version is read from the Cargo workspace and MARKETING_VERSION. They must
 match.
@@ -57,7 +60,7 @@ if [ "$(uname)" != "Darwin" ]; then
   exit 1
 fi
 
-for tool in cargo xcodebuild codesign ditto file lipo shasum; do
+for tool in cargo xcodebuild codesign ditto file hdiutil lipo shasum; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "error: $tool is required." >&2
     exit 1
@@ -215,8 +218,9 @@ codesign --verify --strict --verbose=2 "$APP"
 
 ARCH="$(lipo -archs "$APP/Contents/MacOS/Fleet" | tr ' ' '-')"
 ZIP="$DIST/Fleet-${VERSION}-macos-${ARCH}.zip"
+DMG="$DIST/Fleet-${VERSION}-macos-${ARCH}.dmg"
 mkdir -p "$DIST"
-rm -f "$ZIP" "$ZIP.sha256"
+rm -f "$ZIP" "$ZIP.sha256" "$DMG" "$DMG.sha256"
 
 echo
 echo "==> Packaging $ZIP"
@@ -227,13 +231,40 @@ ditto -c -k --keepParent "$APP" "$ZIP"
 )
 
 echo
+echo "==> Packaging $DMG"
+# Stage the signed app beside an Applications shortcut so the mounted image
+# can be dragged to install. The staging folder is outside dist/ so the
+# shortcut is not mistaken for a build artifact.
+STAGE="$(mktemp -d "${TMPDIR:-/tmp}/fleet-dmg.XXXXXX")"
+trap 'rm -rf "$STAGE"' EXIT
+ditto "$APP" "$STAGE/Fleet.app"
+ln -s /Applications "$STAGE/Applications"
+hdiutil create \
+  -volname "Fleet" \
+  -srcfolder "$STAGE" \
+  -fs HFS+ \
+  -format UDZO \
+  -ov \
+  -quiet "$DMG"
+if [ "$SIGN_IDENTITY" != "-" ]; then
+  # Signing the image itself keeps its seal intact after it is mounted.
+  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG"
+fi
+(
+  cd "$DIST"
+  shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256"
+)
+
+echo
 echo "Release $VERSION"
-echo "App:      $APP"
-echo "Archive:  $ZIP"
-echo "Checksum: $ZIP.sha256"
+echo "App:        $APP"
+echo "Archive:    $ZIP"
+echo "Checksum:   $ZIP.sha256"
+echo "Disk image: $DMG"
+echo "Checksum:   $DMG.sha256"
 if [ "$SIGN_IDENTITY" = "-" ]; then
   echo "Signature: ad-hoc"
 else
   echo "Signature: $SIGN_IDENTITY"
-  echo "This archive is signed and not notarized."
+  echo "These archives are signed and not notarized."
 fi
