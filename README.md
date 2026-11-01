@@ -5,7 +5,7 @@ Agentic Development Environment for running and coordinating coding agents, back
 
 ## Architecture
 
-![Proposed Architecture](assets/architecture.svg)
+![Fleet preview](assets/preview.png)
 
 The Rust daemon owns agent processes and terminal sessions independently of the desktop UI. Closing the UI detaches the client; running agents continue until they exit or the daemon stops.
 
@@ -78,7 +78,7 @@ print(receive())
 
 ## macOS prototype
 
-![Fleet preview](assets/preview.png)
+![Proposed Architecture](assets/architecture.svg)
 
 A SwiftUI frontend lives in `apps/macos`. It connects to the daemon, shows one project with two live terminal panes, and reads git status for a context panel. Requirements, shortcuts, limitations, and recorded verification are in [`apps/macos/README.md`](apps/macos/README.md). The frontend decision is recorded in [`docs/decisions/0001-MACOS-FRONTEND.md`](docs/decisions/0001-MACOS-FRONTEND.md).
 
