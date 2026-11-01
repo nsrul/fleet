@@ -6,11 +6,18 @@ struct FleetApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
 
+    private static let previewLaunch = ProcessInfo.processInfo.environment["FLEET_PREVIEW"] == "1"
+
     var body: some Scene {
-        Window("Fleet", id: "main") {
+        // A separate window id so a screenshot launch does not restore, or
+        // overwrite, the frame saved for a normal Fleet window.
+        Window("Fleet", id: Self.previewLaunch ? "preview" : "main") {
             RootView(model: model)
         }
-        .defaultSize(width: 1440, height: 900)
+        .defaultSize(
+            width: Self.previewLaunch ? 1520 : 1440,
+            height: Self.previewLaunch ? 980 : 900
+        )
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .commands {

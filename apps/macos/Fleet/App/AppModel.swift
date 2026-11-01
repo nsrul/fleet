@@ -178,10 +178,10 @@ final class AppModel {
     var isSplit = false
     var splitLayout: SplitLayout = .stacked
     var showSidebar = true {
-        didSet { UserDefaults.standard.set(showSidebar, forKey: Self.showSidebarKey) }
+        didSet { store(showSidebar, forKey: Self.showSidebarKey) }
     }
     var showContext = true {
-        didSet { UserDefaults.standard.set(showContext, forKey: Self.showContextKey) }
+        didSet { store(showContext, forKey: Self.showContextKey) }
     }
     /// 0 is liquid glass on the side panels. 1 is the solid panel color.
     var panelSolidity: Double = 1 {
@@ -191,7 +191,7 @@ final class AppModel {
                 panelSolidity = clamped
                 return
             }
-            UserDefaults.standard.set(clamped, forKey: Self.panelSolidityKey)
+            store(clamped, forKey: Self.panelSolidityKey)
         }
     }
     var filter: SessionFilter = .all
@@ -221,6 +221,7 @@ final class AppModel {
     var panelScratchID: String? {
         didSet {
             guard panelScratchID != oldValue else { return }
+            guard !isPreview else { return }
             if let panelScratchID {
                 UserDefaults.standard.set(panelScratchID, forKey: Self.panelScratchKey)
             } else {
@@ -243,18 +244,25 @@ final class AppModel {
     }
     /// Layout used the next time the app launches. The live split is separate.
     var defaultSplitLayout: SplitLayout = .stacked {
-        didSet { UserDefaults.standard.set(defaultSplitLayout.rawValue, forKey: Self.defaultSplitKey) }
+        didSet { store(defaultSplitLayout.rawValue, forKey: Self.defaultSplitKey) }
     }
     var confirmStop = true {
-        didSet { UserDefaults.standard.set(confirmStop, forKey: Self.confirmStopKey) }
+        didSet { store(confirmStop, forKey: Self.confirmStopKey) }
     }
     /// Empty means a new agent starts in the last directory that was used.
     var pinnedWorkingDirectory = "" {
-        didSet { UserDefaults.standard.set(pinnedWorkingDirectory, forKey: Self.pinnedDirectoryKey) }
+        didSet { store(pinnedWorkingDirectory, forKey: Self.pinnedDirectoryKey) }
     }
     /// Names shown for sessions. The daemon keeps the id; this is the label.
     var sessionNames: [String: String] = [:] {
-        didSet { UserDefaults.standard.set(sessionNames, forKey: Self.sessionNamesKey) }
+        didSet { store(sessionNames, forKey: Self.sessionNamesKey) }
+    }
+
+    /// Screenshot mode. The sidebar and the middle panes are fixtures.
+    /// The context-panel shell still uses the daemon, so Helix can open.
+    /// Set with `FLEET_PREVIEW=1`.
+    var isPreview: Bool {
+        ProcessInfo.processInfo.environment["FLEET_PREVIEW"] == "1"
     }
 
     var socketPath: String
@@ -281,6 +289,9 @@ final class AppModel {
     @ObservationIgnored private var attachedSessionIDs: Set<String> = []
     @ObservationIgnored private var attachingSessionIDs: Set<String> = []
     @ObservationIgnored private var errorToken = UUID()
+    @ObservationIgnored private var paintedPreviewSizes: [String: TerminalSize] = [:]
+    /// Fixture sessions whose terminals are drawn locally. A real shell is not in this set.
+    @ObservationIgnored private var paintedPreviewIDs: Set<String> = []
 
     private static let socketKey = "fleet.socketPath"
     private static let autoStartKey = "fleet.autoStartDaemon"
@@ -325,6 +336,42 @@ final class AppModel {
         if let stored = defaults.string(forKey: Self.panelScratchKey), !stored.isEmpty {
             panelScratchID = stored
         }
+        if isPreview {
+            loadPreview()
+        }
+    }
+
+    /// Preview must not replace the names and layout saved for real sessions.
+    private func store(_ value: Any, forKey key: String) {
+        guard !isPreview else { return }
+        UserDefaults.standard.set(value, forKey: key)
+    }
+
+    private func loadPreview() {
+        let fixture = ClaudePreview.make()
+        connection = .connected(
+            Welcome(
+                protocolVersion: FleetProtocol.version,
+                daemonVersion: "preview",
+                engineState: "running",
+                capabilities: []
+            )
+        )
+        panelScratchID = nil
+        showSidebar = true
+        showContext = true
+        isSplit = false
+        splitLayout = .stacked
+        filter = .all
+        contextShowsTerminal = false
+        paintedPreviewIDs = Set(fixture.sessions.map(\.id))
+        sessions = fixture.sessions
+        sessionNames = fixture.names
+        activeSessionIDs = fixture.activeIDs
+        attentionSessionIDs = fixture.attentionIDs
+        primarySessionID = fixture.focusID
+        secondarySessionID = nil
+        focusedPane = .primary
     }
 
     private static func loadTerminal(from defaults: UserDefaults) -> TerminalPreferences {
@@ -354,6 +401,7 @@ final class AppModel {
     }
 
     private func persistTerminal(_ prefs: TerminalPreferences) {
+        guard !isPreview else { return }
         let defaults = UserDefaults.standard
         defaults.set(prefs.fontID, forKey: Self.fontIDKey)
         defaults.set(prefs.fontSize, forKey: Self.fontSizeKey)
@@ -542,6 +590,10 @@ final class AppModel {
     // MARK: - Lifecycle
 
     func bootstrap() async {
+        if isPreview {
+            startGitLoop()
+            return
+        }
         guard case .idle = connection else { return }
         await connect(allowAutoStart: true)
     }
@@ -671,6 +723,11 @@ final class AppModel {
 
     private func eventStreamEnded() {
         guard connection.isConnected else { return }
+        if isPreview {
+            client = nil
+            attachedSessionIDs.removeAll()
+            return
+        }
         gitTask?.cancel()
         gitTask = nil
         connection = .failed(AgentNotices.daemonClosedConnection())
@@ -683,6 +740,11 @@ final class AppModel {
         case .status(let sessionID, let status):
             updateStatus(status, for: sessionID)
         case .daemonStopping:
+            if isPreview {
+                client = nil
+                showNotice(AgentNotices.daemonShuttingDown())
+                return
+            }
             connection = .failed(AgentNotices.daemonShuttingDown())
         }
     }
@@ -793,7 +855,9 @@ final class AppModel {
         isSplit = false
 
         Task {
-            await attachIfNeeded(sessionID)
+            if !paintsPreview(sessionID) {
+                await attachIfNeeded(sessionID)
+            }
             await refreshGitForFocusedSession()
         }
     }
@@ -868,6 +932,7 @@ final class AppModel {
 
     /// Stops the running sessions in the list. Exited sessions are ignored.
     func stopSessions(_ sessionIDs: [String]) {
+        if isPreview { return }
         let ids = sessionIDs.filter { session(id: $0)?.isRunning == true }
         guard !ids.isEmpty else { return }
         Task {
@@ -897,6 +962,7 @@ final class AppModel {
     }
 
     func requestDelete(_ sessionIDs: [String]) {
+        if isPreview { return }
         guard connection.isConnected else {
             showNotice(AgentNotices.notConnected())
             return
@@ -996,6 +1062,7 @@ final class AppModel {
     }
 
     func forkSession(_ sessionID: String) {
+        if isPreview { return }
         guard let session = session(id: sessionID) else { return }
         Task {
             do {
@@ -1101,7 +1168,12 @@ final class AppModel {
             self?.enqueueInput(data, for: sessionID)
         }
         controller.onResize = { [weak self] size in
-            self?.enqueueResize(size, for: sessionID)
+            guard let self else { return }
+            if self.paintsPreview(sessionID) {
+                self.paintPreview(sessionID, size: size)
+                return
+            }
+            self.enqueueResize(size, for: sessionID)
         }
         controller.onFocus = { [weak self] in
             guard let self else { return }
@@ -1172,7 +1244,29 @@ final class AppModel {
         }
     }
 
+    private func paintPreview(_ sessionID: String, size: TerminalSize) {
+        guard size.cols >= 20, size.rows >= 8 else { return }
+        if paintedPreviewSizes[sessionID] == size { return }
+        paintedPreviewSizes[sessionID] = size
+        guard let controller = controllers[sessionID] else { return }
+        let title = session(id: sessionID).map(displayTitle(for:)) ?? sessionID
+        let bytes = ClaudePreview.screen(
+            sessionID: sessionID,
+            columns: Int(size.cols),
+            rows: Int(size.rows),
+            title: title
+        )
+        controller.reset()
+        controller.feed(bytes)
+    }
+
+    /// Fixture panes are drawn locally. A context-panel shell is a real session.
+    private func paintsPreview(_ sessionID: String) -> Bool {
+        isPreview && paintedPreviewIDs.contains(sessionID)
+    }
+
     private func enqueueInput(_ data: Data, for sessionID: String) {
+        if paintsPreview(sessionID) { return }
         guard !data.isEmpty else { return }
         if inputSuspended || inputMutedSessionIDs.contains(sessionID) { return }
         inputBuffers[sessionID, default: Data()].append(data)
@@ -1442,9 +1536,13 @@ final class AppModel {
     }
 
     private func createScratchNow(cwd: String) async {
-        guard scratchSession == nil, let client else { return }
+        guard scratchSession == nil else { return }
+        if client == nil, isPreview {
+            guard await ensurePreviewDaemon() else { return }
+        }
+        guard let client else { return }
         let directory = Self.directoryExists(cwd) ? cwd : Self.defaultWorkingDirectory
-        let id = nextScratchID()
+        let id = await nextScratchID(client: client)
         let spec = CreateSession(
             id: id,
             program: "/bin/zsh",
@@ -1466,11 +1564,50 @@ final class AppModel {
         }
     }
 
-    private func nextScratchID() -> String {
+    /// Opens a daemon connection for the context-panel shell without replacing
+    /// the fixture sessions or the saved window.
+    private func ensurePreviewDaemon() async -> Bool {
+        if client != nil { return true }
+        do {
+            try await openPreviewDaemon()
+            return client != nil
+        } catch {
+            if autoStartDaemon, isConnectionFailure(error), let executable = DaemonLauncher.locate() {
+                do {
+                    try await DaemonLauncher.start(executable: executable, socketPath: socketPath)
+                    try await openPreviewDaemon()
+                    return client != nil
+                } catch {
+                    showNotice(AgentNotices.explainConnection(error, socketPath: socketPath))
+                    return false
+                }
+            }
+            showNotice(AgentNotices.explainConnection(error, socketPath: socketPath))
+            return false
+        }
+    }
+
+    private func openPreviewDaemon() async throws {
+        let client = try FleetClient(path: socketPath)
+        do {
+            _ = try await client.connect(clientName: "fleet-macos")
+            self.client = client
+            inputSuspended = false
+            startEventLoop(client)
+        } catch {
+            await client.disconnect()
+            throw error
+        }
+    }
+
+    private func nextScratchID(client: FleetClient) async -> String {
         var used = Set(sessions.map(\.id))
         if let id = scratchSession?.id { used.insert(id) }
         if let id = panelScratchID { used.insert(id) }
-        let base = "fleet-scratch"
+        if let remote = try? await client.listSessions() {
+            used.formUnion(remote.map(\.id))
+        }
+        let base = isPreview ? "preview-shell" : "fleet-scratch"
         if !used.contains(base) { return base }
         var suffix = 2
         while used.contains("\(base)-\(suffix)") { suffix += 1 }

@@ -324,6 +324,7 @@ struct SidebarView: View {
     private func isExpanded(_ group: SessionGroup, anyAssigned: Bool) -> Bool {
         if isSearching { return true }
         if collapsedGroupIDs.contains(group.id) { return false }
+        if model.isPreview { return true }
         if expandedGroupIDs.contains(group.id) { return true }
         if !anyAssigned { return true }
         return containsAssignedSession(group)

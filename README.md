@@ -78,6 +78,8 @@ print(receive())
 
 ## macOS prototype
 
+![Fleet preview](assets/preview.png)
+
 A SwiftUI frontend lives in `apps/macos`. It connects to the daemon, shows one project with two live terminal panes, and reads git status for a context panel. Requirements, shortcuts, limitations, and recorded verification are in [`apps/macos/README.md`](apps/macos/README.md). The frontend decision is recorded in [`docs/decisions/0001-MACOS-FRONTEND.md`](docs/decisions/0001-MACOS-FRONTEND.md).
 
 ```sh
@@ -96,6 +98,7 @@ scripts/dev.sh      # build and launch Fleet
 scripts/build.sh    # build the daemon and app
 scripts/install.sh  # replace older installs with a release build from this checkout
 scripts/demo.sh     # two live agent panes
+scripts/preview.sh  # UI-only window for screenshots
 scripts/test.sh     # Rust workspace and FleetKit tests
 scripts/verify.sh   # formatting, Clippy, tests, smoke checks, app build
 scripts/clean.sh    # remove build artifacts

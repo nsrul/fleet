@@ -16,6 +16,11 @@ struct RootView: View {
         .background {
             WindowOpacity(transparent: model.panelSolidity < 0.999)
         }
+        .background {
+            if model.isPreview {
+                PreviewWindowFrame()
+            }
+        }
         .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme ?? .light)
         .onAppear {
             model.applyAppearance(appearanceRaw)
