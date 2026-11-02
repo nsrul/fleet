@@ -6,14 +6,74 @@ import SwiftTerm
 /// A terminal view that reports when it becomes the keyboard focus.
 ///
 /// SwiftTerm's `becomeFirstResponder` is public but not open, so focus is
-/// reported from mouse interaction and from explicit pane focus instead.
+/// reported from mouse interaction, file drops, and explicit pane focus instead.
 final class FleetTerminalView: TerminalView {
     var onFocus: (() -> Void)?
+
+    /// True while a valid drag hovers, so the pane shows a drop target.
+    private var isDropTarget = false {
+        didSet { layer?.borderWidth = isDropTarget ? 2 : 0 }
+    }
+
+    override init(frame frameRect: NSRect, font: NSFont?, options: TerminalOptions) {
+        super.init(frame: frameRect, font: font, options: options)
+        registerForDraggedTypes([.fileURL, .string])
+        layer?.borderColor = Palette.accentNS.cgColor
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        registerForDraggedTypes([.fileURL, .string])
+        layer?.borderColor = Palette.accentNS.cgColor
+    }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         onFocus?()
         super.mouseDown(with: event)
+    }
+
+    // MARK: - NSDraggingDestination
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dropOperation(for: sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dropOperation(for: sender)
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        isDropTarget = false
+    }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        isDropTarget = false
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        TerminalDrop.text(from: sender.draggingPasteboard) != nil
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        isDropTarget = false
+        guard let text = TerminalDrop.text(from: sender.draggingPasteboard) else {
+            return false
+        }
+        // Insert at this pane's prompt, not the one that had focus before.
+        window?.makeFirstResponder(self)
+        onFocus?()
+        pasteText(text)
+        return true
+    }
+
+    private func dropOperation(for sender: NSDraggingInfo) -> NSDragOperation {
+        guard TerminalDrop.text(from: sender.draggingPasteboard) != nil else {
+            isDropTarget = false
+            return []
+        }
+        isDropTarget = true
+        return .copy
     }
 }
 

@@ -1485,7 +1485,7 @@ final class AppModel {
     }
 
     static func shellQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        ShellEscape.quote(value)
     }
 
     static func normalizeDirectory(_ raw: String) -> String {

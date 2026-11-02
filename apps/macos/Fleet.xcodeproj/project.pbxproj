@@ -17,6 +17,7 @@
 		34206BC65CD9FC00F732384B /* Fleet.icns in Resources */ = {isa = PBXBuildFile; fileRef = D4C8FC928C7647044BAFEB21 /* Fleet.icns */; };
 		3718DE84C778244F8EFD4F23 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7057DA52D27913E1D3526C /* ConnectionView.swift */; };
 		46814482FB1A7748AA9559F8 /* GitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8077A6471D75FC1652EB1D51 /* GitService.swift */; };
+		471AE2481334B1041BC4E1B0 /* TerminalDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0019E096F9C79D99A6F9D83 /* TerminalDrop.swift */; };
 		4D7D342C912B6E48CDBA5766 /* AgentCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC857938EA7118BD4594A321 /* AgentCatalog.swift */; };
 		5F0CF8BA4DBC006F8FE5E3FE /* TerminalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA8A45647CE4DC7AC70CDE5D /* TerminalController.swift */; };
 		6A497CA959385417B2F8816A /* TerminalPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D09011A40F3BE078C4A1C838 /* TerminalPaneView.swift */; };
@@ -68,6 +69,7 @@
 		DB7773FB40FDCB7F750DD7EA /* TerminalAreaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAreaView.swift; sourceTree = "<group>"; };
 		DF51DA43BD25101D2EF80906 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		ED0B004130C9B43A122F190E /* ClaudePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudePreview.swift; sourceTree = "<group>"; };
+		F0019E096F9C79D99A6F9D83 /* TerminalDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalDrop.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -87,6 +89,7 @@
 			isa = PBXGroup;
 			children = (
 				DA8A45647CE4DC7AC70CDE5D /* TerminalController.swift */,
+				F0019E096F9C79D99A6F9D83 /* TerminalDrop.swift */,
 				4B0BE833F68BC553546DA2BF /* TerminalFont.swift */,
 				871E4C8B27623F3D2757925B /* TerminalHostView.swift */,
 			);
@@ -303,6 +306,7 @@
 				0934BA68EF6040A027DA0756 /* SidebarView.swift in Sources */,
 				F68BE6BCEC2FCEFC56950C56 /* TerminalAreaView.swift in Sources */,
 				5F0CF8BA4DBC006F8FE5E3FE /* TerminalController.swift in Sources */,
+				471AE2481334B1041BC4E1B0 /* TerminalDrop.swift in Sources */,
 				26745FF90D096984AFE879EB /* TerminalFont.swift in Sources */,
 				B1CC79E83848B04546AF91C0 /* TerminalHostView.swift in Sources */,
 				6A497CA959385417B2F8816A /* TerminalPaneView.swift in Sources */,
