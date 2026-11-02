@@ -3,7 +3,7 @@
 
 Agentic Development Environment for running and coordinating coding agents, backed by a Rust engine.
 
-## Architecture
+### Preview
 
 ![Fleet preview](assets/preview.png)
 
@@ -76,7 +76,7 @@ send({"type": "request", "request_id": 1, "command": {"command": "list_sessions"
 print(receive())
 ```
 
-## macOS prototype
+### Architecture
 
 ![Proposed Architecture](assets/architecture.svg)
 
