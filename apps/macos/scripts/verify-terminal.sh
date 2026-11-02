@@ -56,6 +56,11 @@ Run `scripts/demo.sh`, then verify in the two live panes:
      and rows update and the agent TUI reflows.
   6. Reattach: quit Fleet, reopen it, and confirm both agent processes are
      still running and their output is replayed.
+  7. File drop: drag a PNG from Finder onto a pane. The pane highlights while
+     the drag hovers, its quoted absolute path appears at that pane's prompt
+     with no trailing newline, and the pane has focus afterward.
+  8. Multi-file and text drops: drag two files (both paths, space-separated)
+     and a folder (its path). Drag text from another app (the text).
 
 The prototype was verified on macOS 27 with Claude Code 2.1.311 and Gemini CLI
 0.46.0. See apps/macos/README.md for the recorded results.
