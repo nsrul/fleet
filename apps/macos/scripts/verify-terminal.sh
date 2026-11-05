@@ -21,6 +21,13 @@ echo "== FleetKit unit tests"
 (cd "$APP_DIR/FleetKit" && swift test)
 
 echo
+echo "== Codex control socket"
+swiftc -o "$TMP/codex-socket-tests" \
+  "$APP_DIR/Fleet/Services/CodexControlSocket.swift" \
+  "$APP_DIR/tests/CodexControlSocketTests.swift"
+"$TMP/codex-socket-tests"
+
+echo
 echo "== Build fleet-daemon"
 (cd "$ROOT" && cargo build -p fleet-daemon --locked)
 

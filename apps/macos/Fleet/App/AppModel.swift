@@ -1094,10 +1094,16 @@ final class AppModel {
             ? (program as NSString).lastPathComponent
             : trimmedName
         let id = uniqueSessionID(name)
+        let launch = isPreview
+            ? CodexLaunch(arguments: arguments, notice: nil)
+            : await CodexControlSocket.adjustForLaunch(program: program, arguments: arguments)
+        if let notice = launch.notice {
+            showNotice(UserNotice(notice))
+        }
         let spec = CreateSession(
             id: id,
             program: program,
-            args: arguments,
+            args: launch.arguments,
             cwd: cwd,
             env: [
                 "TERM": "xterm-256color",
