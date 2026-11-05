@@ -11,6 +11,7 @@
 		0D246EB71B087B1691006F35 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8D86FF4284B57A36E0A5DE24 /* Assets.xcassets */; };
 		0D9402633FB1114DD1C0427F /* ContextDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81F228E68217B49243E02801 /* ContextDiffView.swift */; };
 		107665118E830BB088836256 /* FleetAPI in Frameworks */ = {isa = PBXBuildFile; productRef = BE57F7AE00F4C8C72AE3A232 /* FleetAPI */; };
+		13109FC54396304226554F05 /* CodexControlSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 142F8FCE83D842FE3E198AB8 /* CodexControlSocket.swift */; };
 		1EAE0C08A2AFF2B6A92722B9 /* ContextPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 484119FE72EF462E66228A49 /* ContextPanelView.swift */; };
 		26745FF90D096984AFE879EB /* TerminalFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0BE833F68BC553546DA2BF /* TerminalFont.swift */; };
 		2BEB17A9980A7937CD4DBC7F /* DaemonLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85343EA7A7BA41C4E21E7957 /* DaemonLauncher.swift */; };
@@ -42,6 +43,7 @@
 /* Begin PBXFileReference section */
 		01F035D9F49A6AFCA8FE3495 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		0F7057DA52D27913E1D3526C /* ConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionView.swift; sourceTree = "<group>"; };
+		142F8FCE83D842FE3E198AB8 /* CodexControlSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexControlSocket.swift; sourceTree = "<group>"; };
 		17219B7EC0DB7FBCAD7F59AC /* ContextTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextTerminalView.swift; sourceTree = "<group>"; };
 		1A1B6F64E7A3960A31BBFFD9 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		1BB9E41730C985DF8E35BC16 /* SettingsPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPanes.swift; sourceTree = "<group>"; };
@@ -109,6 +111,7 @@
 			isa = PBXGroup;
 			children = (
 				BC857938EA7118BD4594A321 /* AgentCatalog.swift */,
+				142F8FCE83D842FE3E198AB8 /* CodexControlSocket.swift */,
 				85343EA7A7BA41C4E21E7957 /* DaemonLauncher.swift */,
 				8077A6471D75FC1652EB1D51 /* GitService.swift */,
 			);
@@ -291,6 +294,7 @@
 				4D7D342C912B6E48CDBA5766 /* AgentCatalog.swift in Sources */,
 				CBC4AE6FF0107F9397EB76F6 /* AppModel.swift in Sources */,
 				E8FC78546D2DEA600449215E /* ClaudePreview.swift in Sources */,
+				13109FC54396304226554F05 /* CodexControlSocket.swift in Sources */,
 				3718DE84C778244F8EFD4F23 /* ConnectionView.swift in Sources */,
 				0D9402633FB1114DD1C0427F /* ContextDiffView.swift in Sources */,
 				1EAE0C08A2AFF2B6A92722B9 /* ContextPanelView.swift in Sources */,
