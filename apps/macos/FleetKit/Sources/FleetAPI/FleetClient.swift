@@ -5,6 +5,7 @@ public enum ClientEvent: Sendable {
     case output(sessionID: String, seq: UInt64, data: Data)
     case status(sessionID: String, status: SessionStatus)
     case daemonStopping
+    case sessionsChanged
 }
 
 /// An async client for the Fleet local session API.
@@ -131,6 +132,37 @@ public actor FleetClient {
         }
     }
 
+    public func reportPresence(_ report: ReportPresence) async throws {
+        let response = try await request(.reportPresence(report))
+        guard case .acknowledged = response else {
+            throw FleetError.unexpectedResponse("expected an acknowledgement")
+        }
+    }
+
+    public func listTasks(parentID: String?) async throws -> [TaskInfo] {
+        let data = try await request(.listTasks(parentID: parentID))
+        guard case .tasks(let tasks) = data else {
+            throw FleetError.unexpectedResponse("expected a task list")
+        }
+        return tasks
+    }
+
+    public func putPlan(_ plan: PutPlan) async throws -> PlanInfo {
+        let data = try await request(.putPlan(plan))
+        guard case .plan(let info) = data else {
+            throw FleetError.unexpectedResponse("expected a plan")
+        }
+        return info
+    }
+
+    public func getPlan(id: String) async throws -> PlanInfo {
+        let data = try await request(.getPlan(id: id))
+        guard case .plan(let info) = data else {
+            throw FleetError.unexpectedResponse("expected a plan")
+        }
+        return info
+    }
+
     public func resize(id: String, size: TerminalSize) async throws {
         let response = try await request(.resize(id: id, size: size))
         guard case .acknowledged = response else {
@@ -207,6 +239,8 @@ public actor FleetClient {
                 eventContinuation.yield(.status(sessionID: sessionID, status: status))
             case .daemonStopping:
                 eventContinuation.yield(.daemonStopping)
+            case .sessionsChanged:
+                eventContinuation.yield(.sessionsChanged)
             }
         }
     }

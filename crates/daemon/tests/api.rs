@@ -14,8 +14,9 @@ use fleet_protocol::{
     PROTOCOL_VERSION,
     api::{
         ApiError, AttachedSession, Base64Bytes, ClientMessage, Command, CreateSession, ErrorCode,
-        Event, MAX_FRAME_BYTES, MAX_INPUT_BYTES, OutputSnapshot, ResponseData, ServerMessage,
-        SessionExit, SessionInfo, SessionStatus, TerminalSize,
+        Event, MAX_FRAME_BYTES, MAX_INPUT_BYTES, OutputSnapshot, PlanInfo, PlanState, PlanStepSpec,
+        PutPlan, ResponseData, ServerMessage, SessionExit, SessionInfo, SessionStatus,
+        SidebarClass, StepState, TerminalSize,
     },
 };
 use support::{Daemon, WAIT_LIMIT};
@@ -59,8 +60,15 @@ impl Client {
                 assert_eq!(protocol_version, PROTOCOL_VERSION);
                 assert_eq!(engine_state, fleet_protocol::DaemonState::Running);
                 assert!(
-                    capabilities.iter().any(|capability| capability
-                        == fleet_protocol::api::CAPABILITY_REMOVE_SESSION)
+                    capabilities
+                        .iter()
+                        .any(|capability| capability
+                            == fleet_protocol::api::CAPABILITY_REMOVE_SESSION)
+                );
+                assert!(
+                    capabilities
+                        .iter()
+                        .any(|capability| capability == fleet_protocol::api::CAPABILITY_TASKS)
                 );
             }
             other => panic!("expected a welcome, got {other:?}"),
@@ -203,6 +211,8 @@ fn create_session(id: &str, script: &str) -> Command {
             .into_owned(),
         env: BTreeMap::new(),
         size: TerminalSize::new(24, 80),
+        parent_id: None,
+        brief: None,
     })
 }
 
@@ -250,7 +260,7 @@ async fn collect_until(client: &mut Client, output: &mut Output, needle: &str) -
             .expect("timed out waiting for output");
         match event {
             Event::Output { .. } => output.apply(&event),
-            Event::Status { .. } => {}
+            Event::Status { .. } | Event::SessionsChanged => {}
             Event::DaemonStopping => panic!("the daemon stopped while waiting for {needle:?}"),
         }
     }
@@ -273,7 +283,7 @@ async fn wait_for_status(
                 session_id: id,
                 status,
             } if id == session_id => return status,
-            Event::Status { .. } => {}
+            Event::Status { .. } | Event::SessionsChanged => {}
             Event::Output { .. } => output.apply(&event),
             Event::DaemonStopping => panic!("the daemon stopped while waiting for status"),
         }
@@ -583,7 +593,7 @@ async fn removing_an_exited_session_releases_its_attachment_and_id() {
         .request(create_session("reuse", "sleep 30"))
         .await
         .expect("reuse the removed session ID");
-    attach(&mut client, "reuse").await.0;
+    _ = attach(&mut client, "reuse").await;
     client
         .request(Command::StopSession { id: "reuse".into() })
         .await
@@ -836,4 +846,305 @@ async fn shutdown_notifies_attached_clients_and_removes_the_socket() {
     assert!(daemon.exited(shutdown_deadline).success());
     assert!(!daemon.socket_path().exists());
     daemon.assert_output_finished();
+}
+
+fn step(program: &str) -> PlanStepSpec {
+    PlanStepSpec {
+        program: program.into(),
+        args: Vec::new(),
+        cwd: std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(),
+        env: BTreeMap::new(),
+        brief: None,
+    }
+}
+
+fn expect_plan(data: ResponseData) -> PlanInfo {
+    match data {
+        ResponseData::Plan(plan) => plan,
+        other => panic!("expected a plan, got {other:?}"),
+    }
+}
+
+fn expect_tasks(data: ResponseData) -> Vec<fleet_protocol::api::TaskInfo> {
+    match data {
+        ResponseData::Tasks(tasks) => tasks,
+        other => panic!("expected tasks, got {other:?}"),
+    }
+}
+
+async fn wait_for_plan(client: &mut Client, id: &str) -> PlanInfo {
+    let deadline = Instant::now() + WAIT_LIMIT;
+    loop {
+        let plan = expect_plan(
+            client
+                .request(Command::GetPlan { id: id.into() })
+                .await
+                .expect("read the plan"),
+        );
+        if plan.state != PlanState::Running {
+            return plan;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for plan {id} to finish"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test]
+async fn a_plan_runs_the_next_step_after_a_successful_exit() {
+    let daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+    client
+        .request(create_session("parent", "sleep 30"))
+        .await
+        .expect("create the parent");
+
+    let plan = expect_plan(
+        client
+            .request(Command::PutPlan(PutPlan {
+                parent_id: "parent".into(),
+                steps: vec![step("/usr/bin/true"), step("/usr/bin/true")],
+            }))
+            .await
+            .expect("start a two-step plan"),
+    );
+    let finished = wait_for_plan(&mut client, &plan.id).await;
+    assert_eq!(finished.state, PlanState::Done);
+    assert_eq!(finished.steps.len(), 2);
+    assert!(
+        finished
+            .steps
+            .iter()
+            .all(|step| step.state == StepState::Done)
+    );
+    assert_eq!(
+        finished.steps[0].session_id.as_deref(),
+        Some(format!("{}-1", plan.id).as_str())
+    );
+    assert_eq!(
+        finished.steps[1].session_id.as_deref(),
+        Some(format!("{}-2", plan.id).as_str())
+    );
+}
+
+#[tokio::test]
+async fn a_failed_step_does_not_start_the_rest_of_the_plan() {
+    let daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+    client
+        .request(create_session("parent", "sleep 30"))
+        .await
+        .expect("create the parent");
+
+    let plan = expect_plan(
+        client
+            .request(Command::PutPlan(PutPlan {
+                parent_id: "parent".into(),
+                steps: vec![step("/usr/bin/false"), step("/usr/bin/true")],
+            }))
+            .await
+            .expect("start a plan whose first step fails"),
+    );
+    let finished = wait_for_plan(&mut client, &plan.id).await;
+    assert_eq!(finished.state, PlanState::Failed);
+    assert_eq!(finished.steps[0].state, StepState::Failed);
+    assert_eq!(finished.steps[1].state, StepState::Waiting);
+    assert!(finished.steps[1].session_id.is_none());
+}
+
+#[tokio::test]
+async fn stopping_a_parent_leaves_its_child_running() {
+    let daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+    client
+        .request(create_session("parent", "sleep 30"))
+        .await
+        .expect("create the parent");
+
+    let child = CreateSession {
+        id: "child".into(),
+        program: "/bin/sleep".into(),
+        args: vec!["30".into()],
+        cwd: std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(),
+        env: BTreeMap::new(),
+        size: TerminalSize::new(24, 80),
+        parent_id: Some("parent".into()),
+        brief: Some("watch this".into()),
+    };
+    client
+        .request(Command::CreateSession(child.clone()))
+        .await
+        .expect("create the child");
+
+    let tasks = expect_tasks(
+        client
+            .request(Command::ListTasks {
+                parent_id: Some("parent".into()),
+            })
+            .await
+            .expect("list the parent's tasks"),
+    );
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0].session_id, "child");
+    assert_eq!(tasks[0].parent_id.as_deref(), Some("parent"));
+    assert_eq!(tasks[0].brief.as_deref(), Some("watch this"));
+
+    let _ = expect_exit(
+        client
+            .request(Command::StopSession {
+                id: "parent".into(),
+            })
+            .await
+            .expect("stop the parent"),
+    );
+    let info = expect_session(
+        client
+            .request(Command::InspectSession { id: "child".into() })
+            .await
+            .expect("the child is still there"),
+    );
+    assert!(matches!(info.status, SessionStatus::Running));
+}
+
+#[tokio::test]
+async fn presence_and_exit_status_choose_the_sidebar_class() {
+    let daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+    client
+        .request(create_session("parent", "sleep 30"))
+        .await
+        .expect("create the parent");
+
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let spawn = |id: &str, program: &str, args: Vec<String>| CreateSession {
+        id: id.into(),
+        program: program.into(),
+        args,
+        cwd: cwd.clone(),
+        env: BTreeMap::new(),
+        size: TerminalSize::new(24, 80),
+        parent_id: Some("parent".into()),
+        brief: None,
+    };
+    client
+        .request(Command::CreateSession(spawn(
+            "quiet",
+            "/bin/sleep",
+            vec!["30".into()],
+        )))
+        .await
+        .expect("create a quiet session");
+    client
+        .request(Command::CreateSession(spawn(
+            "active",
+            "/bin/sleep",
+            vec!["30".into()],
+        )))
+        .await
+        .expect("create an active session");
+    client
+        .request(Command::CreateSession(spawn(
+            "bell",
+            "/bin/sleep",
+            vec!["30".into()],
+        )))
+        .await
+        .expect("create a session that needs attention");
+    client
+        .request(Command::CreateSession(spawn(
+            "ok",
+            "/usr/bin/true",
+            Vec::new(),
+        )))
+        .await
+        .expect("create a session that exits 0");
+    client
+        .request(Command::CreateSession(spawn(
+            "bad",
+            "/usr/bin/false",
+            Vec::new(),
+        )))
+        .await
+        .expect("create a session that exits 1");
+
+    for (id, active, needs_attention) in [("active", true, false), ("bell", true, true)] {
+        client
+            .request(Command::ReportPresence(
+                fleet_protocol::api::ReportPresence {
+                    id: id.into(),
+                    active,
+                    needs_attention,
+                },
+            ))
+            .await
+            .expect("report presence");
+    }
+
+    let deadline = Instant::now() + WAIT_LIMIT;
+    let tasks = loop {
+        let tasks = expect_tasks(
+            client
+                .request(Command::ListTasks {
+                    parent_id: Some("parent".into()),
+                })
+                .await
+                .expect("list tasks"),
+        );
+        let settled = tasks
+            .iter()
+            .any(|task| task.session_id == "ok" && matches!(task.status, SessionStatus::Exited(_)))
+            && tasks.iter().any(|task| {
+                task.session_id == "bad" && matches!(task.status, SessionStatus::Exited(_))
+            });
+        if settled {
+            break tasks;
+        }
+        assert!(Instant::now() < deadline, "timed out waiting for exits");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+
+    let class = |id: &str| {
+        tasks
+            .iter()
+            .find(|task| task.session_id == id)
+            .unwrap_or_else(|| panic!("missing task {id}"))
+            .sidebar
+    };
+    assert_eq!(class("quiet"), SidebarClass::Idle);
+    assert_eq!(class("active"), SidebarClass::Running);
+    assert_eq!(class("bell"), SidebarClass::NeedsYou);
+    assert_eq!(class("ok"), SidebarClass::Idle);
+    assert_eq!(class("bad"), SidebarClass::NeedsYou);
+}
+
+#[tokio::test]
+async fn creating_a_session_tells_a_client_that_has_not_attached() {
+    let daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+    client
+        .request(create_session("fresh", "sleep 5"))
+        .await
+        .expect("create a session");
+    assert!(matches!(client.next_event().await, Event::SessionsChanged));
 }

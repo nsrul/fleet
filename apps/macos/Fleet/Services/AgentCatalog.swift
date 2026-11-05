@@ -1,3 +1,4 @@
+import FleetAPI
 import Foundation
 
 struct AgentPreset: Identifiable, Equatable, Sendable {
@@ -88,5 +89,18 @@ enum AgentCatalog {
         return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
             && !isDirectory.boolValue
             && FileManager.default.isExecutableFile(atPath: path)
+    }
+
+    static var pluginPresets: [PluginPreset] {
+        AgentPreset.all.filter { !$0.isCustom }.map {
+            PluginPreset(id: $0.id, binary: $0.binary, arguments: $0.arguments)
+        }
+    }
+
+    /// Extra arguments that point a supported preset at this app's plugin.
+    /// Shell, custom commands, and presets without a session-scoped flag get none.
+    static func pluginArguments(program: String, endpoint: FleetPluginEndpoint) -> [String] {
+        guard let preset = preset(forProgram: program) else { return [] }
+        return FleetPluginLaunch.arguments(presetID: preset.id, endpoint: endpoint)
     }
 }

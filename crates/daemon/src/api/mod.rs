@@ -3,6 +3,7 @@
 mod codec;
 mod listener;
 mod outbound;
+mod tasks;
 
 use std::{
     collections::HashMap,
@@ -24,9 +25,10 @@ use fleet_engine::{
 use fleet_protocol::{
     DaemonState, PROTOCOL_VERSION,
     api::{
-        ApiError, AttachedSession, Base64Bytes, CAPABILITY_REMOVE_SESSION, ClientMessage, Command,
-        CreateSession, ErrorCode, Event, ResponseData, ResponseResult, ServerMessage, SessionExit,
-        SessionInfo, SessionStatus, TerminalSize,
+        ApiError, AttachedSession, Base64Bytes, CAPABILITY_REMOVE_SESSION, CAPABILITY_TASKS,
+        ClientMessage, Command, CreateSession, ErrorCode, Event, PlanStepSpec, PutPlan,
+        ReportPresence, ResponseData, ResponseResult, ServerMessage, SessionExit, SessionInfo,
+        SessionStatus, TerminalSize,
     },
 };
 use tokio::{
@@ -38,7 +40,7 @@ use tokio::{
 };
 use tracing::{debug, warn};
 
-use self::{codec::FrameError, listener::LocalListener, outbound::Outbound};
+use self::{codec::FrameError, listener::LocalListener, outbound::Outbound, tasks::TaskBook};
 
 const MAX_CLIENTS: usize = 32;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -58,6 +60,7 @@ pub struct ApiServer {
 struct ApiState {
     engine: Arc<Mutex<Engine>>,
     shutdown: watch::Sender<bool>,
+    tasks: TaskBook,
 }
 
 impl ApiServer {
@@ -73,6 +76,7 @@ impl ApiServer {
             state: Arc::new(ApiState {
                 engine,
                 shutdown: shutdown.clone(),
+                tasks: TaskBook::new(),
             }),
             clients: Arc::new(Semaphore::new(MAX_CLIENTS)),
             connections: JoinSet::new(),
@@ -211,6 +215,7 @@ async fn handle_connection(
         outbound: Some(outbound),
         closed,
         shutdown,
+        sessions: state.tasks.subscribe(),
         state,
         attachments: HashMap::new(),
         writer: Some(writer),
@@ -225,6 +230,7 @@ struct Connection {
     outbound: Option<Outbound>,
     closed: watch::Receiver<bool>,
     shutdown: watch::Receiver<bool>,
+    sessions: watch::Receiver<u64>,
     state: Arc<ApiState>,
     attachments: HashMap<SessionId, JoinHandle<()>>,
     writer: Option<JoinHandle<()>>,
@@ -294,7 +300,10 @@ impl Connection {
                     protocol_version: PROTOCOL_VERSION,
                     daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
                     engine_state: daemon_state(engine_state),
-                    capabilities: vec![CAPABILITY_REMOVE_SESSION.to_owned()],
+                    capabilities: vec![
+                        CAPABILITY_REMOVE_SESSION.to_owned(),
+                        CAPABILITY_TASKS.to_owned(),
+                    ],
                 })?;
                 debug!(
                     client_id = self.client_id,
@@ -316,6 +325,7 @@ impl Connection {
                 Message(std::result::Result<Option<ClientMessage>, FrameError>),
                 Shutdown,
                 Closed,
+                Sessions,
             }
 
             let next = tokio::select! {
@@ -324,6 +334,7 @@ impl Connection {
                 }
                 _ = wait_until_set(&mut self.shutdown) => Next::Shutdown,
                 _ = wait_until_set(&mut self.closed) => Next::Closed,
+                _ = self.sessions.changed() => Next::Sessions,
             };
 
             match next {
@@ -340,6 +351,11 @@ impl Connection {
                     return Ok(());
                 }
                 Next::Closed => return Ok(()),
+                Next::Sessions => {
+                    self.send(ServerMessage::Event {
+                        event: Event::SessionsChanged,
+                    })?;
+                }
             }
         }
     }
@@ -364,12 +380,11 @@ impl Connection {
             Command::RemoveSession { id } => {
                 let session_id = SessionId::new(id.clone()).ok();
                 let result = execute(&self.state, Command::RemoveSession { id }).await;
-                if result.is_ok() {
-                    if let Some(session_id) = session_id {
-                        if let Some(task) = self.attachments.remove(&session_id) {
-                            task.abort();
-                        }
-                    }
+                if result.is_ok()
+                    && let Some(session_id) = session_id
+                    && let Some(task) = self.attachments.remove(&session_id)
+                {
+                    task.abort();
                 }
                 self.respond(request_id, result)
             }
@@ -515,11 +530,23 @@ impl Connection {
 }
 
 async fn execute(
-    state: &ApiState,
+    state: &Arc<ApiState>,
     command: Command,
 ) -> std::result::Result<ResponseData, ApiError> {
     match command {
         Command::CreateSession(request) => {
+            let parent_id = request.parent_id.clone();
+            let brief = request.brief.clone();
+            if let Some(brief) = brief.as_deref() {
+                reject_nul("brief", brief)?;
+            }
+            if let Some(parent) = parent_id.as_deref() {
+                if parent.is_empty() {
+                    return Err(ApiError::invalid_request("parent_id must not be empty"));
+                }
+                let parent = session_id(parent.to_owned())?;
+                let _ = find_session(state, &parent).await?;
+            }
             let spec = build_spec(request)?;
             let handle = state
                 .engine
@@ -527,7 +554,15 @@ async fn execute(
                 .await
                 .spawn_session(spec)
                 .map_err(map_engine_error)?;
-            Ok(ResponseData::Session(protocol_info(&handle.info())))
+            let info = protocol_info(&handle.info());
+            if parent_id.is_some() || brief.is_some() {
+                state
+                    .tasks
+                    .record_task(info.id.clone(), parent_id, brief)
+                    .await;
+            }
+            state.tasks.bump().await;
+            Ok(ResponseData::Session(info))
         }
         Command::ListSessions => {
             let engine = state.engine.lock().await;
@@ -562,8 +597,46 @@ async fn execute(
                 ));
             }
             engine.remove_session(&id).map_err(map_engine_error)?;
+            drop(engine);
+            state.tasks.forget(id.as_str()).await;
+            state.tasks.bump().await;
             Ok(ResponseData::Acknowledged)
         }
+        Command::ReportPresence(ReportPresence {
+            id,
+            active,
+            needs_attention,
+        }) => {
+            let session_id = session_id(id)?;
+            let _ = find_session(state, &session_id).await?;
+            state
+                .tasks
+                .set_presence(session_id.to_string(), active, needs_attention)
+                .await;
+            Ok(ResponseData::Acknowledged)
+        }
+        Command::ListTasks { parent_id } => {
+            let engine = state.engine.lock().await;
+            if engine.state() == EngineState::Stopped {
+                return Err(ApiError::new(
+                    ErrorCode::EngineStopped,
+                    "the engine is stopped",
+                ));
+            }
+            let sessions: Vec<_> = engine
+                .sessions()
+                .into_iter()
+                .map(|info| (info.id.to_string(), protocol_status(&info.status)))
+                .collect();
+            drop(engine);
+            let tasks = state.tasks.list(&sessions, parent_id.as_deref()).await;
+            Ok(ResponseData::Tasks(tasks))
+        }
+        Command::PutPlan(request) => {
+            let plan = start_plan(state, request).await?;
+            Ok(ResponseData::Plan(plan))
+        }
+        Command::GetPlan { id } => Ok(ResponseData::Plan(state.tasks.get(&id).await?)),
         Command::Input { id, data } => {
             if data.len() > fleet_protocol::api::MAX_INPUT_BYTES {
                 return Err(ApiError::invalid_request(format!(
@@ -706,6 +779,117 @@ async fn wait_until_set(receiver: &mut watch::Receiver<bool>) {
         return;
     }
     let _ = receiver.changed().await;
+}
+
+async fn start_plan(
+    state: &Arc<ApiState>,
+    request: PutPlan,
+) -> std::result::Result<fleet_protocol::api::PlanInfo, ApiError> {
+    if request.parent_id.is_empty() {
+        return Err(ApiError::invalid_request("parent_id must not be empty"));
+    }
+    let parent = session_id(request.parent_id.clone())?;
+    let _ = find_session(state, &parent).await?;
+    for step in &request.steps {
+        validate_step(step)?;
+    }
+    let plan_id = state
+        .tasks
+        .begin_plan(request.parent_id, request.steps)
+        .await?;
+    let handle = match spawn_plan_step(state, &plan_id, 0).await {
+        Ok(handle) => handle,
+        Err(error) => {
+            state.tasks.fail_plan(&plan_id, 0).await;
+            return Err(error);
+        }
+    };
+    let runner = Arc::clone(state);
+    let watched = plan_id.clone();
+    tokio::spawn(async move {
+        advance_plan(runner, watched, handle).await;
+    });
+    state.tasks.get(&plan_id).await
+}
+
+fn validate_step(step: &PlanStepSpec) -> std::result::Result<(), ApiError> {
+    let _ = build_spec(CreateSession {
+        id: "plan-step".into(),
+        program: step.program.clone(),
+        args: step.args.clone(),
+        cwd: step.cwd.clone(),
+        env: step.env.clone(),
+        size: TerminalSize::new(24, 80),
+        parent_id: None,
+        brief: None,
+    })?;
+    if let Some(brief) = &step.brief {
+        reject_nul("brief", brief)?;
+    }
+    Ok(())
+}
+
+async fn spawn_plan_step(
+    state: &ApiState,
+    plan_id: &str,
+    index: usize,
+) -> std::result::Result<SessionHandle, ApiError> {
+    let session_id = format!("{plan_id}-{}", index + 1);
+    let mut spec = state.tasks.step_spec(plan_id, index).await?;
+    // The app cannot know this id when it submits the plan. The child uses it as parent_id.
+    spec.env
+        .insert("FLEET_SESSION_ID".to_owned(), session_id.clone());
+    let parent = state.tasks.plan_parent(plan_id).await;
+    let built = build_spec(CreateSession {
+        id: session_id.clone(),
+        program: spec.program,
+        args: spec.args,
+        cwd: spec.cwd,
+        env: spec.env,
+        size: TerminalSize::new(24, 80),
+        parent_id: parent,
+        brief: spec.brief.clone(),
+    })?;
+    let handle = state
+        .engine
+        .lock()
+        .await
+        .spawn_session(built)
+        .map_err(map_engine_error)?;
+    state.tasks.mark_started(plan_id, index, session_id).await;
+    state.tasks.bump().await;
+    Ok(handle)
+}
+
+async fn advance_plan(state: Arc<ApiState>, plan_id: String, mut handle: SessionHandle) {
+    loop {
+        let success = wait_for_exit(&handle).await;
+        if state.tasks.complete_running(&plan_id, success).await == tasks::Advance::Stop {
+            return;
+        }
+        let Some(index) = state.tasks.next_waiting(&plan_id).await else {
+            return;
+        };
+        match spawn_plan_step(&state, &plan_id, index).await {
+            Ok(next) => handle = next,
+            Err(_) => {
+                state.tasks.fail_plan(&plan_id, index).await;
+                return;
+            }
+        }
+    }
+}
+
+async fn wait_for_exit(handle: &SessionHandle) -> bool {
+    let mut status = handle.status_changes();
+    loop {
+        if let EngineSessionStatus::Exited(exit) = status.borrow().clone() {
+            return exit.success();
+        }
+        if status.changed().await.is_err() {
+            return false;
+        }
+    }
 }
 
 fn session_id(value: String) -> std::result::Result<SessionId, ApiError> {
@@ -864,6 +1048,8 @@ mod tests {
             cwd: "/tmp".into(),
             env: Default::default(),
             size: Default::default(),
+            parent_id: None,
+            brief: None,
         }
     }
 

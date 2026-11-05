@@ -21,6 +21,9 @@ pub const MAX_INPUT_BYTES: usize = 1024 * 1024;
 /// Capabilities a daemon can advertise in its welcome message.
 pub const CAPABILITY_REMOVE_SESSION: &str = "remove_session";
 
+/// Task links, plans, and sidebar presence. Absent on a daemon that predates them.
+pub const CAPABILITY_TASKS: &str = "tasks";
+
 /// Opaque bytes encoded as a base64 string on the wire.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Base64Bytes(Vec<u8>);
@@ -115,6 +118,118 @@ pub struct CreateSession {
     pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub size: TerminalSize,
+    /// Session that started this one. Recorded by the daemon, not the engine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    /// Task text stored for the parent. It is not written to the terminal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief: Option<String>,
+}
+
+/// One resolved step of a plan. The caller has already turned a preset into a program.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanStepSpec {
+    pub program: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub cwd: String,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief: Option<String>,
+}
+
+/// A plan submitted by a parent session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PutPlan {
+    pub parent_id: String,
+    pub steps: Vec<PlanStepSpec>,
+}
+
+/// Latest sidebar inputs for one session. The app reports these. The daemon does not parse output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReportPresence {
+    pub id: String,
+    pub active: bool,
+    pub needs_attention: bool,
+}
+
+/// The sidebar class for a session. The rules match `AppModel.matches`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SidebarClass {
+    Running,
+    Idle,
+    NeedsYou,
+}
+
+/// Where a plan step is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepState {
+    Waiting,
+    Running,
+    Done,
+    Failed,
+}
+
+/// Where a plan is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanState {
+    Running,
+    Done,
+    Failed,
+}
+
+/// A session the plugin started, joined with daemon status and the sidebar class.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskInfo {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief: Option<String>,
+    pub status: SessionStatus,
+    pub sidebar: SidebarClass,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_state: Option<StepState>,
+}
+
+/// One step as stored on a plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanStepInfo {
+    pub index: u32,
+    pub state: StepState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief: Option<String>,
+}
+
+/// A plan and the steps spawned so far.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanInfo {
+    pub id: String,
+    pub parent_id: String,
+    pub state: PlanState,
+    pub steps: Vec<PlanStepInfo>,
+}
+
+/// Needs you wins. Otherwise a live session with recent output is Running, and everything else is Idle.
+pub fn sidebar_class(status: &SessionStatus, active: bool, needs_attention: bool) -> SidebarClass {
+    let failed = matches!(status, SessionStatus::Exited(exit) if !exit.success);
+    if needs_attention || failed {
+        return SidebarClass::NeedsYou;
+    }
+    if matches!(status, SessionStatus::Running) && active {
+        return SidebarClass::Running;
+    }
+    SidebarClass::Idle
 }
 
 /// A command sent by a client.
@@ -123,13 +238,38 @@ pub struct CreateSession {
 pub enum Command {
     CreateSession(CreateSession),
     ListSessions,
-    InspectSession { id: String },
-    StopSession { id: String },
-    RemoveSession { id: String },
-    Input { id: String, data: Base64Bytes },
-    Resize { id: String, size: TerminalSize },
-    AttachSession { id: String },
-    DetachSession { id: String },
+    InspectSession {
+        id: String,
+    },
+    StopSession {
+        id: String,
+    },
+    RemoveSession {
+        id: String,
+    },
+    Input {
+        id: String,
+        data: Base64Bytes,
+    },
+    Resize {
+        id: String,
+        size: TerminalSize,
+    },
+    AttachSession {
+        id: String,
+    },
+    DetachSession {
+        id: String,
+    },
+    ReportPresence(ReportPresence),
+    ListTasks {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_id: Option<String>,
+    },
+    PutPlan(PutPlan),
+    GetPlan {
+        id: String,
+    },
 }
 
 /// A message sent from a client to the daemon.
@@ -199,6 +339,8 @@ pub enum ResponseData {
     Exit(SessionExit),
     Attached(AttachedSession),
     Acknowledged,
+    Tasks(Vec<TaskInfo>),
+    Plan(PlanInfo),
 }
 
 /// A request outcome.
@@ -280,6 +422,7 @@ pub enum Event {
         status: SessionStatus,
     },
     DaemonStopping,
+    SessionsChanged,
 }
 
 /// A message sent from the daemon to a client.
@@ -312,7 +455,7 @@ mod tests {
     use super::{
         Base64Bytes, CAPABILITY_REMOVE_SESSION, ClientMessage, Command, CreateSession, ErrorCode,
         Event, ResponseData, ResponseResult, ServerMessage, SessionExit, SessionInfo,
-        SessionStatus, TerminalSize,
+        SessionStatus, SidebarClass, TerminalSize, sidebar_class,
     };
     use crate::{DaemonState, PROTOCOL_VERSION};
 
@@ -340,6 +483,8 @@ mod tests {
                 cwd: "/tmp".into(),
                 env: Default::default(),
                 size: TerminalSize::new(24, 80),
+                parent_id: None,
+                brief: None,
             }),
         };
         let encoded = serde_json::to_value(&request).unwrap();
@@ -351,6 +496,22 @@ mod tests {
             serde_json::from_value::<ClientMessage>(encoded).unwrap(),
             request
         );
+
+        let without_task_fields = json!({
+            "type": "request",
+            "request_id": 7,
+            "command": {
+                "command": "create_session",
+                "params": {
+                    "id": "one",
+                    "program": "/bin/sh",
+                    "args": ["-c", "true"],
+                    "cwd": "/tmp"
+                }
+            }
+        });
+        let decoded = serde_json::from_value::<ClientMessage>(without_task_fields).unwrap();
+        assert_eq!(decoded, request);
     }
 
     #[test]
@@ -456,6 +617,26 @@ mod tests {
                 "capabilities": ["remove_session"],
             })
         );
+    }
+
+    #[test]
+    fn sidebar_class_matches_the_app_rows() {
+        let running = SessionStatus::Running;
+        let ok = SessionStatus::Exited(SessionExit {
+            success: true,
+            code: 0,
+            signal: None,
+        });
+        let failed = SessionStatus::Exited(SessionExit {
+            success: false,
+            code: 1,
+            signal: None,
+        });
+        assert_eq!(sidebar_class(&running, true, false), SidebarClass::Running);
+        assert_eq!(sidebar_class(&running, false, false), SidebarClass::Idle);
+        assert_eq!(sidebar_class(&running, true, true), SidebarClass::NeedsYou);
+        assert_eq!(sidebar_class(&ok, false, false), SidebarClass::Idle);
+        assert_eq!(sidebar_class(&failed, false, false), SidebarClass::NeedsYou);
     }
 
     #[test]
