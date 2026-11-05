@@ -42,6 +42,8 @@ struct FleetProbe {
                     await store.setStatus(status, for: sessionID)
                 case .daemonStopping:
                     await store.markDaemonStopping()
+                case .sessionsChanged:
+                    break
                 }
             }
         }

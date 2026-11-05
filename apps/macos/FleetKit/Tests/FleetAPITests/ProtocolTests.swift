@@ -38,6 +38,109 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(size["rows"] as? Int, 24)
         XCTAssertEqual(size["cols"] as? Int, 80)
         XCTAssertEqual(size["pixel_width"] as? Int, 0)
+        XCTAssertNil(params["parent_id"])
+        XCTAssertNil(params["brief"])
+    }
+
+    func testCreateSessionEncodesParentAndBrief() throws {
+        let spec = CreateSession(
+            id: "child",
+            program: "/bin/sleep",
+            cwd: "/tmp",
+            parentID: "parent",
+            brief: "watch this"
+        )
+        let object = try jsonObject(
+            FrameCodec.encode(ClientMessage.request(requestID: 1, command: .createSession(spec)))
+        )
+        let command = try XCTUnwrap(object["command"] as? [String: Any])
+        let params = try XCTUnwrap(command["params"] as? [String: Any])
+        XCTAssertEqual(params["parent_id"] as? String, "parent")
+        XCTAssertEqual(params["brief"] as? String, "watch this")
+    }
+
+    func testTaskCommandsEncode() throws {
+        let report = ClientMessage.request(
+            requestID: 2,
+            command: .reportPresence(ReportPresence(id: "one", active: true, needsAttention: true))
+        )
+        let reportObject = try jsonObject(FrameCodec.encode(report))
+        let reportCommand = try XCTUnwrap(reportObject["command"] as? [String: Any])
+        XCTAssertEqual(reportCommand["command"] as? String, "report_presence")
+        let reportParams = try XCTUnwrap(reportCommand["params"] as? [String: Any])
+        XCTAssertEqual(reportParams["needs_attention"] as? Bool, true)
+
+        let list = ClientMessage.request(requestID: 3, command: .listTasks(parentID: nil))
+        let listCommand = try XCTUnwrap(
+            (try jsonObject(FrameCodec.encode(list)))["command"] as? [String: Any]
+        )
+        XCTAssertEqual(listCommand["command"] as? String, "list_tasks")
+        let listParams = try XCTUnwrap(listCommand["params"] as? [String: Any])
+        XCTAssertNil(listParams["parent_id"])
+    }
+
+    func testSidebarClassMatchesTheAppRows() {
+        let rows: [(SessionStatus, Bool, Bool, SidebarClass)] = [
+            (.running, true, false, .running),
+            (.running, false, false, .idle),
+            (.running, true, true, .needsYou),
+            (.exited(SessionExit(success: true, code: 0)), false, false, .idle),
+            (.exited(SessionExit(success: false, code: 1)), false, false, .needsYou),
+        ]
+        for (status, active, needsAttention, expected) in rows {
+            XCTAssertEqual(
+                sidebarClass(status: status, active: active, needsAttention: needsAttention),
+                expected
+            )
+        }
+    }
+
+    func testPresenceReportRequiresTheTasksCapability() {
+        XCTAssertNil(presenceReport(
+            capabilities: ["remove_session"],
+            sessionID: "one",
+            active: true,
+            needsAttention: false
+        ))
+        let report = presenceReport(
+            capabilities: [FleetProtocol.tasksCapability],
+            sessionID: "one",
+            active: true,
+            needsAttention: true
+        )
+        XCTAssertEqual(report, ReportPresence(id: "one", active: true, needsAttention: true))
+    }
+
+    func testTasksPlanAndSessionListEventsDecode() throws {
+        let tasks = Data("""
+        {"type":"response","request_id":1,"result":{"status":"ok","data":{"kind":"tasks","value":[{"session_id":"child","parent_id":"parent","brief":"watch this","status":"running","sidebar":"needs_you"}]}}}
+        """.utf8)
+        guard case .response(_, .ok(.tasks(let decoded))) =
+            try FrameCodec.decode(ServerMessage.self, from: tasks) else {
+            return XCTFail("expected tasks")
+        }
+        XCTAssertEqual(decoded.first?.sessionID, "child")
+        XCTAssertEqual(decoded.first?.sidebar, .needsYou)
+        XCTAssertEqual(decoded.first?.brief, "watch this")
+
+        let plan = Data("""
+        {"type":"response","request_id":2,"result":{"status":"ok","data":{"kind":"plan","value":{"id":"plan-1","parent_id":"parent","state":"done","steps":[{"index":0,"state":"done","session_id":"plan-1-1"},{"index":1,"state":"done","session_id":"plan-1-2"}]}}}}
+        """.utf8)
+        guard case .response(_, .ok(.plan(let info))) =
+            try FrameCodec.decode(ServerMessage.self, from: plan) else {
+            return XCTFail("expected a plan")
+        }
+        XCTAssertEqual(info.id, "plan-1")
+        XCTAssertEqual(info.state, .done)
+        XCTAssertEqual(info.steps.map(\.sessionID), ["plan-1-1", "plan-1-2"])
+
+        let changed = Data("""
+        {"type":"event","event":{"event":"sessions_changed"}}
+        """.utf8)
+        guard case .event(.sessionsChanged) =
+            try FrameCodec.decode(ServerMessage.self, from: changed) else {
+            return XCTFail("expected sessions_changed")
+        }
     }
 
     func testUnitCommandsHaveAStableShape() throws {

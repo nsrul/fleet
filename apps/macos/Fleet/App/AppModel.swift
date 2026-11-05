@@ -292,6 +292,9 @@ final class AppModel {
     @ObservationIgnored private var paintedPreviewSizes: [String: TerminalSize] = [:]
     /// Fixture sessions whose terminals are drawn locally. A real shell is not in this set.
     @ObservationIgnored private var paintedPreviewIDs: Set<String> = []
+    @ObservationIgnored private let plugin = PluginServer(token: PluginServer.newToken())
+    @ObservationIgnored private var sessionListRefresh: Task<Void, Never>?
+    @ObservationIgnored private var sessionListRefreshAgain = false
 
     private static let socketKey = "fleet.socketPath"
     private static let autoStartKey = "fleet.autoStartDaemon"
@@ -426,28 +429,22 @@ final class AppModel {
     }
 
     func matches(_ session: SessionInfo, filter: SessionFilter) -> Bool {
-        let needsYou = needsAttention(session)
+        if filter == .all { return true }
+        let kind = sidebarClass(
+            status: session.status,
+            active: activeSessionIDs.contains(session.id),
+            needsAttention: attentionSessionIDs.contains(session.id)
+        )
         switch filter {
         case .all:
             return true
         case .running:
-            return session.isRunning
-                && activeSessionIDs.contains(session.id)
-                && !needsYou
+            return kind == .running
         case .idle:
-            if needsYou { return false }
-            if session.isRunning { return !activeSessionIDs.contains(session.id) }
-            if case .exited(let exit) = session.status { return exit.success }
-            return false
+            return kind == .idle
         case .needsYou:
-            return needsYou
+            return kind == .needsYou
         }
-    }
-
-    private func needsAttention(_ session: SessionInfo) -> Bool {
-        if attentionSessionIDs.contains(session.id) { return true }
-        if case .exited(let exit) = session.status, !exit.success { return true }
-        return false
     }
 
     func noteSessionActivity(_ sessionID: String, active: Bool, needsAttention: Bool) {
@@ -465,6 +462,18 @@ final class AppModel {
         if becameActive, sessionID == focusedSession?.id, sessionID != panelScratchID {
             scheduleContextRefresh()
         }
+        guard let report = presenceReport(
+            capabilities: daemonCapabilities,
+            sessionID: sessionID,
+            active: active,
+            needsAttention: needsAttention
+        ), let client else { return }
+        Task { try? await client.reportPresence(report) }
+    }
+
+    private var daemonCapabilities: [String] {
+        guard case .connected(let welcome) = connection else { return [] }
+        return welcome.capabilities
     }
 
     var runningCount: Int { sessions.filter(\.isRunning).count }
@@ -635,6 +644,7 @@ final class AppModel {
             connection = .connected(welcome)
             attachedSessionIDs.removeAll()
             attachingSessionIDs.removeAll()
+            startPlugin(client)
             startEventLoop(client)
             try await reloadSessions()
             await attachVisiblePanes()
@@ -681,6 +691,10 @@ final class AppModel {
     }
 
     private func teardownConnection() {
+        plugin.stop()
+        sessionListRefresh?.cancel()
+        sessionListRefresh = nil
+        sessionListRefreshAgain = false
         eventTask?.cancel()
         eventTask = nil
         gitTask?.cancel()
@@ -746,6 +760,8 @@ final class AppModel {
                 return
             }
             connection = .failed(AgentNotices.daemonShuttingDown())
+        case .sessionsChanged:
+            scheduleSessionReload()
         }
     }
 
@@ -784,6 +800,50 @@ final class AppModel {
     }
 
     // MARK: - Sessions
+
+    private func scheduleSessionReload() {
+        sessionListRefreshAgain = true
+        guard sessionListRefresh == nil else { return }
+        sessionListRefresh = Task { [weak self] in
+            await self?.drainSessionReloads()
+        }
+    }
+
+    private func drainSessionReloads() async {
+        while sessionListRefreshAgain {
+            sessionListRefreshAgain = false
+            if Task.isCancelled { break }
+            try? await reloadSessions()
+        }
+        sessionListRefresh = nil
+        if sessionListRefreshAgain {
+            scheduleSessionReload()
+        }
+    }
+
+    private func startPlugin(_ client: FleetClient) {
+        guard daemonCapabilities.contains(FleetProtocol.tasksCapability) else { return }
+        do {
+            _ = try plugin.start { endpoint in
+                PluginHandler(
+                    daemon: client,
+                    presets: AgentCatalog.pluginPresets,
+                    resolve: { AgentCatalog.resolveProgram($0) },
+                    directoryExists: { path in
+                        var isDirectory: ObjCBool = false
+                        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+                            && isDirectory.boolValue
+                    },
+                    endpoint: endpoint,
+                    uniqueSuffix: {
+                        UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(8).description
+                    }
+                )
+            }
+        } catch {
+            plugin.stop()
+        }
+    }
 
     private func reloadSessions() async throws {
         guard let client else {
@@ -1100,15 +1160,16 @@ final class AppModel {
         if let notice = launch.notice {
             showNotice(UserNotice(notice))
         }
+        var launchArguments = launch.arguments
+        if let endpoint = plugin.currentEndpoint() {
+            launchArguments += AgentCatalog.pluginArguments(program: program, endpoint: endpoint)
+        }
         let spec = CreateSession(
             id: id,
             program: program,
-            args: launch.arguments,
+            args: launchArguments,
             cwd: cwd,
-            env: [
-                "TERM": "xterm-256color",
-                "COLORTERM": "truecolor",
-            ],
+            env: sessionEnvironment(sessionID: id),
             size: TerminalSize(rows: 24, cols: 80)
         )
         let session = try await client.createSession(spec)
@@ -1554,10 +1615,7 @@ final class AppModel {
             program: "/bin/zsh",
             args: ["-l"],
             cwd: directory,
-            env: [
-                "TERM": "xterm-256color",
-                "COLORTERM": "truecolor",
-            ],
+            env: sessionEnvironment(sessionID: id),
             size: TerminalSize(rows: 24, cols: 80)
         )
         do {

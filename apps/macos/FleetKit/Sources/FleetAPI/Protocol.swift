@@ -10,6 +10,8 @@ public enum FleetProtocol {
     public static let maxFrameBytes = 4 * 1024 * 1024
     public static let maxPayloadBytes = maxFrameBytes - 4
     public static let maxSocketPathBytes = 100
+    /// Welcome capability for task, plan, and presence commands.
+    public static let tasksCapability = "tasks"
 }
 
 public struct TerminalSize: Codable, Equatable, Sendable {
@@ -56,6 +58,8 @@ public struct CreateSession: Codable, Equatable, Sendable {
     public var cwd: String
     public var env: [String: String]
     public var size: TerminalSize
+    public var parentID: String?
+    public var brief: String?
 
     public init(
         id: String,
@@ -63,7 +67,9 @@ public struct CreateSession: Codable, Equatable, Sendable {
         args: [String] = [],
         cwd: String,
         env: [String: String] = [:],
-        size: TerminalSize = TerminalSize(rows: 24, cols: 80)
+        size: TerminalSize = TerminalSize(rows: 24, cols: 80),
+        parentID: String? = nil,
+        brief: String? = nil
     ) {
         self.id = id
         self.program = program
@@ -71,6 +77,8 @@ public struct CreateSession: Codable, Equatable, Sendable {
         self.cwd = cwd
         self.env = env
         self.size = size
+        self.parentID = parentID
+        self.brief = brief
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -80,6 +88,8 @@ public struct CreateSession: Codable, Equatable, Sendable {
         case cwd
         case env
         case size
+        case parentID = "parent_id"
+        case brief
     }
 
     public init(from decoder: Decoder) throws {
@@ -91,6 +101,20 @@ public struct CreateSession: Codable, Equatable, Sendable {
         env = try container.decodeIfPresent([String: String].self, forKey: .env) ?? [:]
         size = try container.decodeIfPresent(TerminalSize.self, forKey: .size)
             ?? TerminalSize(rows: 24, cols: 80)
+        parentID = try container.decodeIfPresent(String.self, forKey: .parentID)
+        brief = try container.decodeIfPresent(String.self, forKey: .brief)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(program, forKey: .program)
+        try container.encode(args, forKey: .args)
+        try container.encode(cwd, forKey: .cwd)
+        try container.encode(env, forKey: .env)
+        try container.encode(size, forKey: .size)
+        try container.encodeIfPresent(parentID, forKey: .parentID)
+        try container.encodeIfPresent(brief, forKey: .brief)
     }
 }
 
@@ -104,6 +128,10 @@ public enum Command: Encodable, Sendable {
     case resize(id: String, size: TerminalSize)
     case attachSession(id: String)
     case detachSession(id: String)
+    case reportPresence(ReportPresence)
+    case listTasks(parentID: String?)
+    case putPlan(PutPlan)
+    case getPlan(id: String)
 
     private enum CodingKeys: String, CodingKey {
         case command
@@ -153,7 +181,32 @@ public enum Command: Encodable, Sendable {
         case .detachSession(let id):
             try container.encode("detach_session", forKey: .command)
             try container.encode(SessionID(id: id), forKey: .params)
+        case .reportPresence(let report):
+            try container.encode("report_presence", forKey: .command)
+            try container.encode(report, forKey: .params)
+        case .listTasks(let parentID):
+            try container.encode("list_tasks", forKey: .command)
+            try container.encode(ListTasksParams(parentID: parentID), forKey: .params)
+        case .putPlan(let plan):
+            try container.encode("put_plan", forKey: .command)
+            try container.encode(plan, forKey: .params)
+        case .getPlan(let id):
+            try container.encode("get_plan", forKey: .command)
+            try container.encode(SessionID(id: id), forKey: .params)
         }
+    }
+}
+
+private struct ListTasksParams: Encodable {
+    var parentID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case parentID = "parent_id"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(parentID, forKey: .parentID)
     }
 }
 
@@ -314,12 +367,226 @@ public struct AttachedSession: Codable, Equatable, Sendable {
     }
 }
 
+public struct ReportPresence: Codable, Equatable, Sendable {
+    public var id: String
+    public var active: Bool
+    public var needsAttention: Bool
+
+    public init(id: String, active: Bool, needsAttention: Bool) {
+        self.id = id
+        self.active = active
+        self.needsAttention = needsAttention
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case active
+        case needsAttention = "needs_attention"
+    }
+}
+
+/// Sidebar class shared by the app filter and `list_tasks`.
+public enum SidebarClass: String, Codable, Equatable, Sendable {
+    case running
+    case idle
+    case needsYou = "needs_you"
+}
+
+public enum StepState: String, Codable, Equatable, Sendable {
+    case waiting
+    case running
+    case done
+    case failed
+}
+
+public enum PlanState: String, Codable, Equatable, Sendable {
+    case running
+    case done
+    case failed
+}
+
+public struct PlanStepSpec: Codable, Equatable, Sendable {
+    public var program: String
+    public var args: [String]
+    public var cwd: String
+    public var env: [String: String]
+    public var brief: String?
+
+    public init(
+        program: String,
+        args: [String] = [],
+        cwd: String,
+        env: [String: String] = [:],
+        brief: String? = nil
+    ) {
+        self.program = program
+        self.args = args
+        self.cwd = cwd
+        self.env = env
+        self.brief = brief
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case program
+        case args
+        case cwd
+        case env
+        case brief
+    }
+}
+
+public struct PutPlan: Codable, Equatable, Sendable {
+    public var parentID: String
+    public var steps: [PlanStepSpec]
+
+    public init(parentID: String, steps: [PlanStepSpec]) {
+        self.parentID = parentID
+        self.steps = steps
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case parentID = "parent_id"
+        case steps
+    }
+}
+
+public struct TaskInfo: Codable, Equatable, Sendable {
+    public var sessionID: String
+    public var parentID: String?
+    public var brief: String?
+    public var status: SessionStatus
+    public var sidebar: SidebarClass
+    public var planID: String?
+    public var stepIndex: UInt32?
+    public var stepState: StepState?
+
+    public init(
+        sessionID: String,
+        parentID: String? = nil,
+        brief: String? = nil,
+        status: SessionStatus,
+        sidebar: SidebarClass,
+        planID: String? = nil,
+        stepIndex: UInt32? = nil,
+        stepState: StepState? = nil
+    ) {
+        self.sessionID = sessionID
+        self.parentID = parentID
+        self.brief = brief
+        self.status = status
+        self.sidebar = sidebar
+        self.planID = planID
+        self.stepIndex = stepIndex
+        self.stepState = stepState
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case parentID = "parent_id"
+        case brief
+        case status
+        case sidebar
+        case planID = "plan_id"
+        case stepIndex = "step_index"
+        case stepState = "step_state"
+    }
+}
+
+public struct PlanStepInfo: Codable, Equatable, Sendable {
+    public var index: UInt32
+    public var state: StepState
+    public var sessionID: String?
+    public var brief: String?
+
+    public init(index: UInt32, state: StepState, sessionID: String? = nil, brief: String? = nil) {
+        self.index = index
+        self.state = state
+        self.sessionID = sessionID
+        self.brief = brief
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case index
+        case state
+        case sessionID = "session_id"
+        case brief
+    }
+}
+
+public struct PlanInfo: Codable, Equatable, Sendable {
+    public var id: String
+    public var parentID: String
+    public var state: PlanState
+    public var steps: [PlanStepInfo]
+
+    public init(id: String, parentID: String, state: PlanState, steps: [PlanStepInfo]) {
+        self.id = id
+        self.parentID = parentID
+        self.state = state
+        self.steps = steps
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case parentID = "parent_id"
+        case state
+        case steps
+    }
+}
+
+/// Needs you wins. A live session with recent output is Running. Everything else is Idle.
+public func sidebarClass(status: SessionStatus, active: Bool, needsAttention: Bool) -> SidebarClass {
+    let failed: Bool
+    if case .exited(let exit) = status {
+        failed = !exit.success
+    } else {
+        failed = false
+    }
+    if needsAttention || failed {
+        return .needsYou
+    }
+    if case .running = status, active {
+        return .running
+    }
+    return .idle
+}
+
+/// The presence report to send, when the daemon advertised the tasks capability.
+public func presenceReport(
+    capabilities: [String],
+    sessionID: String,
+    active: Bool,
+    needsAttention: Bool
+) -> ReportPresence? {
+    guard capabilities.contains(FleetProtocol.tasksCapability) else { return nil }
+    return ReportPresence(id: sessionID, active: active, needsAttention: needsAttention)
+}
+
+/// Environment for a session the app or the plugin starts. The brief is not included.
+public func sessionEnvironment(sessionID: String) -> [String: String] {
+    [
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "FLEET_SESSION_ID": sessionID,
+    ]
+}
+
+/// Environment stored on a plan step. The daemon adds `FLEET_SESSION_ID` when it assigns the id.
+public func planStepEnvironment() -> [String: String] {
+    [
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+    ]
+}
+
 public enum ResponseData: Sendable {
     case session(SessionInfo)
     case sessions([SessionInfo])
     case exit(SessionExit)
     case attached(AttachedSession)
     case acknowledged
+    case tasks([TaskInfo])
+    case plan(PlanInfo)
 }
 
 extension ResponseData: Decodable {
@@ -342,6 +609,10 @@ extension ResponseData: Decodable {
             self = .attached(try container.decode(AttachedSession.self, forKey: .value))
         case "acknowledged":
             self = .acknowledged
+        case "tasks":
+            self = .tasks(try container.decode([TaskInfo].self, forKey: .value))
+        case "plan":
+            self = .plan(try container.decode(PlanInfo.self, forKey: .value))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .kind,
@@ -395,6 +666,7 @@ public enum Event: Decodable, Sendable {
     case output(sessionID: String, seq: UInt64, data: Data)
     case status(sessionID: String, status: SessionStatus)
     case daemonStopping
+    case sessionsChanged
 
     private enum CodingKeys: String, CodingKey {
         case event
@@ -421,6 +693,8 @@ public enum Event: Decodable, Sendable {
             )
         case "daemon_stopping":
             self = .daemonStopping
+        case "sessions_changed":
+            self = .sessionsChanged
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .event,
