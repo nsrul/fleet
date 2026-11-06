@@ -50,6 +50,12 @@ scripts/verify.sh
 optional manual checklist printed by `apps/macos/scripts/verify-terminal.sh`.
 The automated checks use `/bin/sh` and do not need agent credentials.
 
+GitHub Actions runs formatting, Clippy, and the Rust workspace tests on Linux,
+and `scripts/verify.sh` on macOS. The workflow is
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml). Set
+`FLEET_CI_LOG_DIR` to keep the smoke-test daemon log after `verify-terminal.sh`
+exits.
+
 Release build:
 
 ```sh

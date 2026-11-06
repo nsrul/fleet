@@ -88,9 +88,7 @@ impl Config {
 
 fn default_socket_path() -> PathBuf {
     if let Some(runtime_dir) = env::var_os("XDG_RUNTIME_DIR").filter(|dir| !dir.is_empty()) {
-        return PathBuf::from(runtime_dir)
-            .join("fleet")
-            .join("daemon.sock");
+        return PathBuf::from(runtime_dir).join("fleet").join("daemon.sock");
     }
 
     // SAFETY: getuid has no preconditions and does not mutate global state.
