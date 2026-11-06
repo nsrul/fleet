@@ -37,7 +37,7 @@ struct TerminalPaneView: View {
         .contentShape(Rectangle())
         .overlay {
             if model.draggingTab != nil {
-                PaneDropOverlay(model: model)
+                PaneDropOverlay(model: model, paneID: pane.id)
                     .transition(.opacity)
             }
         }
@@ -122,91 +122,103 @@ struct TerminalPaneView: View {
         _ = model.graceTick
         let seconds = model.graceSeconds(for: tab.id)
 
-        return HStack(spacing: 6) {
+        let drag = TabDrag(tabID: tab.id, paneID: pane.id, sessionID: tab.sessionID)
+        let showClose = hoveredTabID == tab.id || active
+        let showKeep = exited && !kept
+        return ZStack {
             if renamingTabID == tab.id {
                 InlineNameField(text: $draft, onCommit: commitRename, onCancel: cancelRename)
-                    .frame(height: 18)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
             } else {
-                if let session {
-                    AgentMark(program: session.program)
-                        .frame(width: 14, height: 14)
-                    stateDot(session)
-                }
-                Text(title)
-                    .font(Typography.caption)
-                    .foregroundStyle(exited ? Palette.terminalSecondary : Palette.terminalTitle)
-                    .lineLimit(1)
-                if exited, let seconds, !kept {
-                    Text("\(seconds)s")
-                        .font(Typography.captionRegular)
-                        .foregroundStyle(Palette.attention)
-                        .monospacedDigit()
-                }
-                if exited, !kept {
-                    Button("Keep") {
-                        model.keepTab(tab.id)
-                    }
-                    .buttonStyle(.plain)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.accent)
-                    .help("Keep this tab open")
-                }
-                if hoveredTabID == tab.id || active {
-                    Button {
-                        model.closeTab(tab.id)
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Palette.terminalSecondary)
+                HStack(spacing: 6) {
+                    if let session {
+                        AgentMark(program: session.program)
                             .frame(width: 14, height: 14)
-                            .contentShape(Rectangle())
+                        stateDot(session)
                     }
-                    .buttonStyle(.plain)
-                    .help("Close tab")
-                    .accessibilityLabel("Close \(title)")
+                    Text(title)
+                        .font(Typography.caption)
+                        .foregroundStyle(exited ? Palette.terminalSecondary : Palette.terminalTitle)
+                        .lineLimit(1)
+                    if exited, let seconds, !kept {
+                        Text("\(seconds)s")
+                            .font(Typography.captionRegular)
+                            .foregroundStyle(Palette.attention)
+                            .monospacedDigit()
+                    }
+                    Spacer(minLength: 0)
                 }
+                .padding(.leading, 8)
+                .padding(.trailing, tabControlReserve(showKeep: showKeep, showClose: showClose))
+                .allowsHitTesting(false)
+                // Transparent, and in front of the title. A hidden title bar treats
+                // this row as window chrome unless the hit view refuses to move it.
+                TabGrabber(
+                    drag: drag,
+                    title: title,
+                    program: session?.program,
+                    onClick: {
+                        model.editWorkspace(.focusTab(paneID: pane.id, tabID: tab.id))
+                    },
+                    onDoubleClick: {
+                        guard let session else { return }
+                        draft = model.displayTitle(for: session)
+                        renamingTabID = tab.id
+                        model.focusPane(pane.id)
+                    },
+                    onHover: { hovering in
+                        hoveredTabID = hovering ? tab.id : (hoveredTabID == tab.id ? nil : hoveredTabID)
+                    },
+                    onReceive: { incoming in
+                        let resolved = incoming ?? model.draggingTab
+                        guard let resolved else { return false }
+                        model.dropTab(resolved, onPane: pane.id, index: index)
+                        return true
+                    },
+                    onDragStart: { model.beginTabDrag($0) },
+                    onDragEnd: { model.endTabDrag($0) }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .padding(.horizontal, 8)
+        .overlay(alignment: .trailing) {
+            if renamingTabID != tab.id {
+                HStack(spacing: 6) {
+                    if showKeep {
+                        Button("Keep") {
+                            model.keepTab(tab.id)
+                        }
+                        .buttonStyle(.plain)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.accent)
+                        .help("Keep this tab open")
+                    }
+                    if showClose {
+                        Button {
+                            model.closeTab(tab.id)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(Palette.terminalSecondary)
+                                .frame(width: 14, height: 14)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Close tab")
+                        .accessibilityLabel("Close \(title)")
+                    }
+                }
+                .padding(.trailing, 8)
+                .allowsHitTesting(model.draggingTab == nil)
+            }
+        }
         .frame(minWidth: 96, maxWidth: exited ? 240 : 180, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(active ? Color.white.opacity(isFocused ? 0.12 : 0.07) : Color.white.opacity(0.03))
         )
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            guard let session else { return }
-            draft = model.displayTitle(for: session)
-            renamingTabID = tab.id
-            model.focusPane(pane.id)
-        }
-        .onTapGesture {
-            model.editWorkspace(.focusTab(paneID: pane.id, tabID: tab.id))
-        }
-        .onHover { hovering in
-            hoveredTabID = hovering ? tab.id : (hoveredTabID == tab.id ? nil : hoveredTabID)
-        }
-        .onDrag {
-            let drag = TabDrag(tabID: tab.id, paneID: pane.id, sessionID: tab.sessionID)
-            model.beginTabDrag(drag)
-            let provider = NSItemProvider()
-            let payload = drag.data
-            provider.registerDataRepresentation(
-                forTypeIdentifier: TabDrag.pasteboardType,
-                visibility: .all
-            ) { completion in
-                completion(payload, nil)
-                return nil
-            }
-            return provider
-        }
-        .background {
-            TabDropTarget(onTargeted: { _ in }) { drag in
-                guard let drag = drag ?? model.draggingTab else { return false }
-                model.dropTab(drag, onPane: pane.id, index: index)
-                return true
-            }
-        }
+        .opacity(model.draggingTab?.tabID == tab.id ? 0.4 : 1)
         .contextMenu {
             Button("Rename") {
                 guard let session else { return }
@@ -257,6 +269,14 @@ struct TerminalPaneView: View {
         case .idle: return Palette.terminalSecondary
         case .needsYou: return Palette.attention
         }
+    }
+
+    /// Room left of the title so Keep and Close, drawn above the grabber, do not cover it.
+    private func tabControlReserve(showKeep: Bool, showClose: Bool) -> CGFloat {
+        var width: CGFloat = 8
+        if showKeep { width += 40 }
+        if showClose { width += 22 }
+        return width
     }
 
     private func commitRename(_ value: String) {

@@ -165,7 +165,7 @@ extension AppModel {
         }
     }
 
-    private func endTabDrag(_ drag: TabDrag) {
+    func endTabDrag(_ drag: TabDrag) {
         guard draggingTab?.tabID == drag.tabID else { return }
         TabDragSession.active = false
         draggingTab = nil

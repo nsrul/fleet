@@ -149,114 +149,123 @@ struct WorkspaceSplit: View {
 
 }
 
-/// Large shadowed drop regions over one terminal, in the style of a view split.
+/// One translucent half of the pane, following the pointer while a tab is dragged.
 struct PaneDropOverlay: View {
     @Bindable var model: AppModel
+    let paneID: String
+    @State private var hover = DropHover()
+    @State private var edge: DropEdge?
+    @State private var shownEdge: DropEdge?
 
     var body: some View {
         GeometryReader { geo in
-            let zones = DropLayout.zones(in: geo.size)
-            ZStack(alignment: .topLeading) {
-                Color.black.opacity(0.22)
+            let rect = (shownEdge ?? edge)?.preview(in: geo.size)
+            ZStack {
+                Color.black.opacity(0.34)
                     .allowsHitTesting(false)
-                ForEach(zones) { zone in
-                    DropShade(title: zone.title) { drag in
-                        let resolved = drag ?? model.draggingTab
-                        guard let resolved else { return false }
-                        model.dropTab(resolved, axis: zone.axis, placeFirst: zone.placeFirst)
+                if let rect, let shownEdge {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(Color.white.opacity(edge == nil ? 0 : 0.16), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.28), radius: 22, y: 8)
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                        .opacity(edge == nil ? 0 : 1)
+                        .allowsHitTesting(false)
+                        .animation(.smooth(duration: 0.28), value: shownEdge)
+                        .animation(.smooth(duration: 0.16), value: edge == nil)
+                }
+            }
+            .overlay {
+                TabDropTarget(
+                    onTargeted: { hovering in
+                        guard !hovering else { return }
+                        hover.edge = nil
+                        edge = nil
+                    },
+                    onEdge: { next in
+                        let usable = splitsOnEdge ? next : nil
+                        hover.edge = usable
+                        if let usable { shownEdge = usable }
+                        edge = usable
+                    },
+                    tracksEdge: true
+                ) { drag in
+                    let resolved = drag ?? model.draggingTab
+                    guard let resolved else { return false }
+                    if let target = hover.edge {
+                        model.dropTab(resolved, axis: target.axis, placeFirst: target.placeFirst)
                         return true
                     }
-                    .frame(width: zone.rect.width, height: zone.rect.height)
-                    .offset(x: zone.rect.minX, y: zone.rect.minY)
+                    guard resolved.paneID != paneID,
+                          let pane = model.workspace.panes.first(where: { $0.id == paneID })
+                    else { return false }
+                    model.dropTab(resolved, onPane: paneID, index: pane.tabs.count)
+                    return true
                 }
             }
         }
         .allowsHitTesting(true)
     }
-}
 
-private struct DropZone: Identifiable {
-    let id: String
-    let title: String
-    let axis: SplitAxis
-    let placeFirst: Bool
-    let rect: CGRect
-}
-
-private enum DropLayout {
-    /// Four regions that together cover the pane, with a gap so each reads as its own view.
-    static func zones(in size: CGSize) -> [DropZone] {
-        let inset: CGFloat = 12
-        let gap: CGFloat = 10
-        let innerW = size.width - inset * 2
-        let innerH = size.height - inset * 2
-        guard innerW > 96, innerH > 80 else { return [] }
-
-        let band = (innerH - gap * 2) * 0.28
-        let midH = innerH - band * 2 - gap * 2
-        guard band > 36, midH > 36 else { return [] }
-        let side = (innerW - gap) / 2
-        let midY = inset + band + gap
-
-        return [
-            DropZone(
-                id: "left",
-                title: "Open left",
-                axis: .horizontal,
-                placeFirst: true,
-                rect: CGRect(x: inset, y: midY, width: side, height: midH)
-            ),
-            DropZone(
-                id: "right",
-                title: "Open right",
-                axis: .horizontal,
-                placeFirst: false,
-                rect: CGRect(x: inset + side + gap, y: midY, width: side, height: midH)
-            ),
-            DropZone(
-                id: "above",
-                title: "Open above",
-                axis: .vertical,
-                placeFirst: true,
-                rect: CGRect(x: inset, y: inset, width: innerW, height: band)
-            ),
-            DropZone(
-                id: "below",
-                title: "Open below",
-                axis: .vertical,
-                placeFirst: false,
-                rect: CGRect(x: inset, y: size.height - inset - band, width: innerW, height: band)
-            ),
-        ]
+    /// One pane needs two tabs before an edge can open another pane. Two panes already
+    /// accept an edge: the tab moves to that side.
+    private var splitsOnEdge: Bool {
+        let panes = model.workspace.panes
+        if panes.count >= 2 { return true }
+        return (panes.first?.tabs.count ?? 0) >= 2
     }
 }
 
-private struct DropShade: View {
-    let title: String
-    let onDrop: (TabDrag?) -> Bool
-    @State private var targeted = false
+/// Latest edge reported by the drop view. A class so the drop reads the pointer, not a stale render.
+private final class DropHover {
+    var edge: DropEdge?
+}
 
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.black.opacity(targeted ? 0.62 : 0.42))
-                .shadow(color: Color.black.opacity(targeted ? 0.55 : 0.32), radius: targeted ? 28 : 18, y: 10)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.white.opacity(targeted ? 0.20 : 0.08), lineWidth: 1)
-                }
-            Text(title)
-                .font(Typography.calloutMedium)
-                .foregroundStyle(Color.white.opacity(targeted ? 0.94 : 0.72))
+/// The side of a pane the pointer is aiming at.
+enum DropEdge: Equatable {
+    case left, right, top, bottom
+
+    var axis: SplitAxis {
+        switch self {
+        case .left, .right: .horizontal
+        case .top, .bottom: .vertical
         }
-        .padding(8)
-        .scaleEffect(targeted ? 1.012 : 1)
-        .animation(.smooth(duration: 0.2), value: targeted)
-        .overlay {
-            TabDropTarget(onTargeted: { targeted = $0 }) { drag in
-                onDrop(drag)
-            }
-            .padding(8)
+    }
+
+    var placeFirst: Bool { self == .left || self == .top }
+
+    /// Nil in the middle, where a drop rearranges into the pane instead of splitting.
+    static func resolve(_ point: CGPoint, in size: CGSize) -> DropEdge? {
+        guard size.width > 1, size.height > 1 else { return nil }
+        let x = min(1, max(0, point.x / size.width))
+        let y = min(1, max(0, point.y / size.height))
+        let dx = min(x, 1 - x)
+        let dy = min(y, 1 - y)
+        let band: CGFloat = 0.46
+        guard dx < band || dy < band else { return nil }
+        if dx <= dy { return x < 0.5 ? .left : .right }
+        return y < 0.5 ? .top : .bottom
+    }
+
+    func preview(in size: CGSize) -> CGRect {
+        let inset: CGFloat = 12
+        switch self {
+        case .left:
+            let width = max(0, size.width * 0.5 - inset * 1.5)
+            return CGRect(x: inset, y: inset, width: width, height: max(0, size.height - inset * 2))
+        case .right:
+            let width = max(0, size.width * 0.5 - inset * 1.5)
+            return CGRect(x: size.width - inset - width, y: inset, width: width, height: max(0, size.height - inset * 2))
+        case .top:
+            let height = max(0, size.height * 0.5 - inset * 1.5)
+            return CGRect(x: inset, y: inset, width: max(0, size.width - inset * 2), height: height)
+        case .bottom:
+            let height = max(0, size.height * 0.5 - inset * 1.5)
+            return CGRect(x: inset, y: size.height - inset - height, width: max(0, size.width - inset * 2), height: height)
         }
     }
 }
@@ -338,7 +347,9 @@ struct SplitPickerSheet: View {
 }
 
 struct TabDropTarget: NSViewRepresentable {
-    var onTargeted: (Bool) -> Void
+    var onTargeted: (Bool) -> Void = { _ in }
+    var onEdge: (DropEdge?) -> Void = { _ in }
+    var tracksEdge = false
     var onDrop: (TabDrag?) -> Bool
 
     func makeCoordinator() -> Coordinator {
@@ -353,13 +364,18 @@ struct TabDropTarget: NSViewRepresentable {
 
     func updateNSView(_ view: TabDropNSView, context: Context) {
         context.coordinator.onTargeted = onTargeted
+        context.coordinator.onEdge = onEdge
         context.coordinator.onDrop = onDrop
+        context.coordinator.tracksEdge = tracksEdge
         view.coordinator = context.coordinator
     }
 
     final class Coordinator {
         var onTargeted: (Bool) -> Void = { _ in }
+        var onEdge: (DropEdge?) -> Void = { _ in }
         var onDrop: (TabDrag?) -> Bool = { _ in false }
+        var tracksEdge = false
+        var edge: DropEdge?
     }
 }
 
@@ -381,12 +397,13 @@ final class TabDropNSView: NSView {
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        MainActor.assumeIsolated { coordinator?.onTargeted(true) }
+        publish(sender, hovering: true)
         return .move
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        .move
+        publish(sender, hovering: true)
+        return .move
     }
 
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -394,17 +411,301 @@ final class TabDropNSView: NSView {
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
-        MainActor.assumeIsolated { coordinator?.onTargeted(false) }
+        MainActor.assumeIsolated {
+            coordinator?.edge = nil
+            coordinator?.onEdge(nil)
+            coordinator?.onTargeted(false)
+        }
     }
 
     override func draggingEnded(_ sender: NSDraggingInfo) {
-        MainActor.assumeIsolated { coordinator?.onTargeted(false) }
+        MainActor.assumeIsolated {
+            coordinator?.edge = nil
+            coordinator?.onEdge(nil)
+            coordinator?.onTargeted(false)
+        }
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let drag = TabDrag.read(sender.draggingPasteboard)
+        let edge = edge(for: sender)
         return MainActor.assumeIsolated {
-            coordinator?.onDrop(drag) ?? false
+            coordinator?.edge = edge
+            coordinator?.onEdge(edge)
+            return coordinator?.onDrop(drag) ?? false
+        }
+    }
+
+    private func publish(_ sender: NSDraggingInfo, hovering: Bool) {
+        let edge = edge(for: sender)
+        MainActor.assumeIsolated {
+            coordinator?.onTargeted(hovering)
+            guard coordinator?.edge != edge else { return }
+            coordinator?.edge = edge
+            coordinator?.onEdge(edge)
+        }
+    }
+
+    /// Top-left point in this view, matching the SwiftUI preview.
+    private func edge(for sender: NSDraggingInfo) -> DropEdge? {
+        guard coordinator?.tracksEdge == true, bounds.width > 1, bounds.height > 1 else { return nil }
+        let local = convert(sender.draggingLocation, from: nil)
+        let point = isFlipped ? local : CGPoint(x: local.x, y: bounds.height - local.y)
+        return DropEdge.resolve(point, in: bounds.size)
+    }
+}
+
+/// Drags a tab without letting the hidden title bar move the window.
+struct TabGrabber: NSViewRepresentable {
+    var drag: TabDrag
+    var title: String
+    var program: String?
+    var onClick: () -> Void
+    var onDoubleClick: () -> Void
+    var onHover: (Bool) -> Void
+    var onReceive: (TabDrag?) -> Bool
+    var onDragStart: (TabDrag) -> Void
+    var onDragEnd: (TabDrag) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> TabGrabNSView {
+        let view = TabGrabNSView()
+        view.coordinator = context.coordinator
+        view.setAccessibilityElement(false)
+        return view
+    }
+
+    func updateNSView(_ view: TabGrabNSView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.drag = drag
+        coordinator.title = title
+        coordinator.program = program
+        coordinator.onClick = onClick
+        coordinator.onDoubleClick = onDoubleClick
+        coordinator.onHover = onHover
+        coordinator.onReceive = onReceive
+        coordinator.onDragStart = onDragStart
+        coordinator.onDragEnd = onDragEnd
+        view.coordinator = coordinator
+        view.toolTip = title
+    }
+
+    final class Coordinator {
+        var drag = TabDrag(tabID: "", paneID: "", sessionID: "")
+        var title = ""
+        var program: String?
+        var onClick: () -> Void = {}
+        var onDoubleClick: () -> Void = {}
+        var onHover: (Bool) -> Void = { _ in }
+        var onReceive: (TabDrag?) -> Bool = { _ in false }
+        var onDragStart: (TabDrag) -> Void = { _ in }
+        var onDragEnd: (TabDrag) -> Void = { _ in }
+    }
+}
+
+final class TabGrabNSView: NSView, NSDraggingSource {
+    weak var coordinator: TabGrabber.Coordinator?
+    private var origin: NSPoint?
+    private var moved = false
+    private var hoverArea: NSTrackingArea?
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        registerForDraggedTypes([NSPasteboard.PasteboardType(TabDrag.pasteboardType)])
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard super.hitTest(point) != nil else { return nil }
+        guard let event = NSApp.currentEvent else { return self }
+        switch event.type {
+        case .rightMouseDown, .rightMouseUp, .rightMouseDragged:
+            return nil
+        case .leftMouseDown where event.modifierFlags.contains(.control):
+            return nil
+        default:
+            return self
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        hoverArea = area
+        addTrackingArea(area)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        MainActor.assumeIsolated { coordinator?.onHover(true) }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        MainActor.assumeIsolated { coordinator?.onHover(false) }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount >= 2 {
+            origin = nil
+            moved = false
+            MainActor.assumeIsolated { coordinator?.onDoubleClick() }
+            return
+        }
+        origin = event.locationInWindow
+        moved = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let origin, !moved else { return }
+        let dx = event.locationInWindow.x - origin.x
+        let dy = event.locationInWindow.y - origin.y
+        guard dx * dx + dy * dy >= 16 else { return }
+        moved = true
+        startDrag(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let shouldClick = origin != nil && !moved
+        origin = nil
+        moved = false
+        guard shouldClick else { return }
+        MainActor.assumeIsolated { coordinator?.onClick() }
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { .move }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { .move }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let drag = TabDrag.read(sender.draggingPasteboard)
+        return MainActor.assumeIsolated {
+            coordinator?.onReceive(drag) ?? false
+        }
+    }
+
+    func draggingSession(
+        _ session: NSDraggingSession,
+        sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
+        .move
+    }
+
+    func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+        guard let data = coordinator?.drag.data else { return }
+        session.draggingPasteboard.setData(
+            data,
+            forType: NSPasteboard.PasteboardType(TabDrag.pasteboardType)
+        )
+    }
+
+    func draggingSession(
+        _ session: NSDraggingSession,
+        endedAt screenPoint: NSPoint,
+        operation: NSDragOperation
+    ) {
+        guard let drag = coordinator?.drag else { return }
+        MainActor.assumeIsolated {
+            coordinator?.onDragEnd(drag)
+        }
+    }
+
+    func ignoreModifierKeys(for session: NSDraggingSession, mouseDown event: NSEvent) -> Bool {
+        true
+    }
+
+    private func startDrag(with event: NSEvent) {
+        guard let coordinator else { return }
+        let drag = coordinator.drag
+        let title = coordinator.title
+        let program = coordinator.program
+        let image = MainActor.assumeIsolated { () -> NSImage in
+            coordinator.onDragStart(drag)
+            return TabDragPillImage.make(program: program, title: title)
+        }
+        let writer = NSPasteboardItem()
+        writer.setData(drag.data, forType: NSPasteboard.PasteboardType(TabDrag.pasteboardType))
+        let item = NSDraggingItem(pasteboardWriter: writer)
+        let location = convert(event.locationInWindow, from: nil)
+        item.setDraggingFrame(
+            NSRect(
+                x: location.x - TabDragPillImage.cursorLead,
+                y: location.y - image.size.height / 2,
+                width: image.size.width,
+                height: image.size.height
+            ),
+            contents: image
+        )
+        beginDraggingSession(with: [item], event: event, source: self)
+    }
+}
+
+private enum TabDragPillImage {
+    /// Padding around the chip so its shadow is part of the drag image.
+    static let shadowPad: CGFloat = 16
+    /// Distance from the image's left edge to where the pointer should sit.
+    static var cursorLead: CGFloat { shadowPad + 22 }
+
+    @MainActor
+    static func make(program: String?, title: String) -> NSImage {
+        let renderer = ImageRenderer(
+            content: TabDragPill(program: program, title: title).padding(shadowPad)
+        )
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        renderer.isOpaque = false
+        if let image = renderer.nsImage?.copy() as? NSImage, image.size.width > 8 {
+            image.isTemplate = false
+            return image
+        }
+        return NSImage(size: NSSize(width: 140, height: 32))
+    }
+}
+
+private struct TabDragPill: View {
+    var program: String?
+    var title: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let program {
+                AgentMark(program: program)
+                    .frame(width: 14, height: 14)
+            }
+            Text(title)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.terminalTitle)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Image(systemName: "xmark")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(Palette.terminalSecondary)
+                .frame(width: 10, height: 10)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 28)
+        .frame(maxWidth: 220)
+        .fixedSize(horizontal: true, vertical: true)
+        .background {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color(hex: 0x2C2C2E))
+                .shadow(color: .black.opacity(0.45), radius: 10, y: 4)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
         }
     }
 }

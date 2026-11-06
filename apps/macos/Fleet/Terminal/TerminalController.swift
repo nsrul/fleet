@@ -28,7 +28,7 @@ final class FleetTerminalView: TerminalView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // Tab zones live behind this view. Step aside so a tab drop can land.
+        // The split preview lives over this view. Step aside so a tab drop can land.
         if TabDragSession.active { return nil }
         return super.hitTest(point)
     }
