@@ -20,11 +20,6 @@ struct TerminalPaneView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.terminal)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(isFocused ? Palette.accent : Color.white.opacity(0.08))
-                .frame(height: isFocused ? 2 : 1)
-        }
     }
 
     private var terminal: some View {
@@ -40,6 +35,13 @@ struct TerminalPaneView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
+        .overlay {
+            if model.draggingTab != nil {
+                PaneDropOverlay(model: model)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.smooth(duration: 0.32), value: model.draggingTab != nil)
         .onTapGesture {
             model.focusPane(pane.id)
         }
@@ -69,6 +71,7 @@ struct TerminalPaneView: View {
         .frame(height: WorkspaceChrome.barHeight)
         .background {
             TabDropTarget(onTargeted: { _ in }) { drag in
+                guard let drag = drag ?? model.draggingTab else { return false }
                 guard drag.paneID != pane.id || pane.tabs.count > 1 else { return false }
                 model.dropTab(drag, onPane: pane.id, index: pane.tabs.count)
                 return true
@@ -170,13 +173,6 @@ struct TerminalPaneView: View {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(active ? Color.white.opacity(isFocused ? 0.12 : 0.07) : Color.white.opacity(0.03))
         )
-        .overlay(alignment: .bottom) {
-            if active {
-                Rectangle()
-                    .fill(isFocused ? Palette.accent : Color.white.opacity(0.35))
-                    .frame(height: 2)
-            }
-        }
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
             guard let session else { return }
@@ -206,6 +202,7 @@ struct TerminalPaneView: View {
         }
         .background {
             TabDropTarget(onTargeted: { _ in }) { drag in
+                guard let drag = drag ?? model.draggingTab else { return false }
                 model.dropTab(drag, onPane: pane.id, index: index)
                 return true
             }

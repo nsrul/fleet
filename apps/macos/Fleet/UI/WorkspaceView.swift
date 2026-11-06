@@ -17,10 +17,6 @@ struct WorkspaceSplit: View {
                 } else {
                     split(panes, in: geo.size)
                 }
-
-                if model.draggingTab != nil, !panes.isEmpty {
-                    edgeTargets
-                }
             }
         }
     }
@@ -151,52 +147,116 @@ struct WorkspaceSplit: View {
         return min(1 - limit, max(limit, value))
     }
 
-    private var edgeTargets: some View {
-        ZStack {
-            edge(.leading, title: "Open left", axis: .horizontal, placeFirst: true)
-            edge(.trailing, title: "Open right", axis: .horizontal, placeFirst: false)
-            edge(.top, title: "Open above", axis: .vertical, placeFirst: true)
-            edge(.bottom, title: "Open below", axis: .vertical, placeFirst: false)
+}
+
+/// Large shadowed drop regions over one terminal, in the style of a view split.
+struct PaneDropOverlay: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        GeometryReader { geo in
+            let zones = DropLayout.zones(in: geo.size)
+            ZStack(alignment: .topLeading) {
+                Color.black.opacity(0.22)
+                    .allowsHitTesting(false)
+                ForEach(zones) { zone in
+                    DropShade(title: zone.title) { drag in
+                        let resolved = drag ?? model.draggingTab
+                        guard let resolved else { return false }
+                        model.dropTab(resolved, axis: zone.axis, placeFirst: zone.placeFirst)
+                        return true
+                    }
+                    .frame(width: zone.rect.width, height: zone.rect.height)
+                    .offset(x: zone.rect.minX, y: zone.rect.minY)
+                }
+            }
         }
         .allowsHitTesting(true)
     }
+}
 
-    private func edge(
-        _ alignment: Alignment,
-        title: String,
-        axis: SplitAxis,
-        placeFirst: Bool
-    ) -> some View {
-        EdgeDropZone(title: title) { drag in
-            model.dropTab(drag, axis: axis, placeFirst: placeFirst)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-        .padding(alignment == .leading || alignment == .trailing ? .horizontal : .vertical, 0)
+private struct DropZone: Identifiable {
+    let id: String
+    let title: String
+    let axis: SplitAxis
+    let placeFirst: Bool
+    let rect: CGRect
+}
+
+private enum DropLayout {
+    /// Four regions that together cover the pane, with a gap so each reads as its own view.
+    static func zones(in size: CGSize) -> [DropZone] {
+        let inset: CGFloat = 12
+        let gap: CGFloat = 10
+        let innerW = size.width - inset * 2
+        let innerH = size.height - inset * 2
+        guard innerW > 96, innerH > 80 else { return [] }
+
+        let band = (innerH - gap * 2) * 0.28
+        let midH = innerH - band * 2 - gap * 2
+        guard band > 36, midH > 36 else { return [] }
+        let side = (innerW - gap) / 2
+        let midY = inset + band + gap
+
+        return [
+            DropZone(
+                id: "left",
+                title: "Open left",
+                axis: .horizontal,
+                placeFirst: true,
+                rect: CGRect(x: inset, y: midY, width: side, height: midH)
+            ),
+            DropZone(
+                id: "right",
+                title: "Open right",
+                axis: .horizontal,
+                placeFirst: false,
+                rect: CGRect(x: inset + side + gap, y: midY, width: side, height: midH)
+            ),
+            DropZone(
+                id: "above",
+                title: "Open above",
+                axis: .vertical,
+                placeFirst: true,
+                rect: CGRect(x: inset, y: inset, width: innerW, height: band)
+            ),
+            DropZone(
+                id: "below",
+                title: "Open below",
+                axis: .vertical,
+                placeFirst: false,
+                rect: CGRect(x: inset, y: size.height - inset - band, width: innerW, height: band)
+            ),
+        ]
     }
 }
 
-private struct EdgeDropZone: View {
+private struct DropShade: View {
     let title: String
-    let onDrop: (TabDrag) -> Void
+    let onDrop: (TabDrag?) -> Bool
     @State private var targeted = false
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Palette.accent.opacity(targeted ? 0.32 : 0.16))
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Palette.accent.opacity(targeted ? 1 : 0.55), lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.black.opacity(targeted ? 0.62 : 0.42))
+                .shadow(color: Color.black.opacity(targeted ? 0.55 : 0.32), radius: targeted ? 28 : 18, y: 10)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(Color.white.opacity(targeted ? 0.20 : 0.08), lineWidth: 1)
+                }
             Text(title)
-                .font(Typography.caption)
-                .foregroundStyle(Palette.terminalTitle)
+                .font(Typography.calloutMedium)
+                .foregroundStyle(Color.white.opacity(targeted ? 0.94 : 0.72))
         }
-        .frame(width: 148, height: 72)
-        .padding(18)
-        .background {
+        .padding(8)
+        .scaleEffect(targeted ? 1.012 : 1)
+        .animation(.smooth(duration: 0.2), value: targeted)
+        .overlay {
             TabDropTarget(onTargeted: { targeted = $0 }) { drag in
                 onDrop(drag)
-                return true
             }
+            .padding(8)
         }
     }
 }
@@ -279,7 +339,7 @@ struct SplitPickerSheet: View {
 
 struct TabDropTarget: NSViewRepresentable {
     var onTargeted: (Bool) -> Void
-    var onDrop: (TabDrag) -> Bool
+    var onDrop: (TabDrag?) -> Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -299,7 +359,7 @@ struct TabDropTarget: NSViewRepresentable {
 
     final class Coordinator {
         var onTargeted: (Bool) -> Void = { _ in }
-        var onDrop: (TabDrag) -> Bool = { _ in false }
+        var onDrop: (TabDrag?) -> Bool = { _ in false }
     }
 }
 
@@ -316,12 +376,21 @@ final class TabDropNSView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
+        guard TabDragSession.active else { return nil }
+        return super.hitTest(point)
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         MainActor.assumeIsolated { coordinator?.onTargeted(true) }
         return .move
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        .move
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        true
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -333,7 +402,7 @@ final class TabDropNSView: NSView {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let drag = TabDrag.read(sender.draggingPasteboard) else { return false }
+        let drag = TabDrag.read(sender.draggingPasteboard)
         return MainActor.assumeIsolated {
             coordinator?.onDrop(drag) ?? false
         }

@@ -22,6 +22,11 @@ struct TabDrag: Equatable, Codable, Sendable {
     }
 }
 
+/// Set for the whole drag so drop targets can accept hits without stealing clicks.
+enum TabDragSession {
+    nonisolated(unsafe) static var active = false
+}
+
 extension AppModel {
     private var workspaceWritePending: Bool {
         workspaceGeneration != ackedWorkspaceGeneration
@@ -123,15 +128,20 @@ extension AppModel {
     }
 
     func beginTabDrag(_ drag: TabDrag) {
+        TabDragSession.active = true
         draggingTab = drag
+        let board = NSPasteboard(name: .drag)
+        board.setData(drag.data, forType: NSPasteboard.PasteboardType(TabDrag.pasteboardType))
         dragWatch?.cancel()
         dragWatch = Task { @MainActor in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(80))
                 if NSEvent.pressedMouseButtons & 1 == 0 {
-                    if self.draggingTab?.tabID == drag.tabID {
-                        self.draggingTab = nil
-                    }
+                    // The drop is delivered on mouse-up. Wait so the target is
+                    // still in the window when AppKit asks it to perform.
+                    try? await Task.sleep(for: .milliseconds(280))
+                    if Task.isCancelled { break }
+                    self.endTabDrag(drag)
                     break
                 }
             }
@@ -139,13 +149,26 @@ extension AppModel {
     }
 
     func dropTab(_ drag: TabDrag, onPane paneID: String, index: Int) {
-        draggingTab = nil
         editWorkspace(.moveTab(id: drag.tabID, toPaneID: paneID, index: index))
+        finishTabDrag(drag)
     }
 
     func dropTab(_ drag: TabDrag, axis: SplitAxis, placeFirst: Bool) {
-        draggingTab = nil
         editWorkspace(.split(tabID: drag.tabID, axis: axis, placeFirst: placeFirst))
+        finishTabDrag(drag)
+    }
+
+    /// Clears the drag after AppKit has finished the drop callback.
+    private func finishTabDrag(_ drag: TabDrag) {
+        Task { @MainActor in
+            endTabDrag(drag)
+        }
+    }
+
+    private func endTabDrag(_ drag: TabDrag) {
+        guard draggingTab?.tabID == drag.tabID else { return }
+        TabDragSession.active = false
+        draggingTab = nil
     }
 
     func graceSeconds(for tabID: String) -> Int? {
