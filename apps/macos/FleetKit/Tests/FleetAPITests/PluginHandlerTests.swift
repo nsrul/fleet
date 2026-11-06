@@ -24,6 +24,8 @@ final class PluginHandlerTests: XCTestCase {
                 switch (name as NSString).lastPathComponent {
                 case "claude": return "/opt/homebrew/bin/claude"
                 case "codex": return "/opt/homebrew/bin/codex"
+                case "gemini": return "/opt/homebrew/bin/gemini"
+                case "opencode": return "/opt/homebrew/bin/opencode"
                 default: return nil
                 }
             },
@@ -101,13 +103,160 @@ final class PluginHandlerTests: XCTestCase {
         let servers = object?["mcpServers"] as? [String: Any]
         XCTAssertEqual(servers?.keys.sorted(), ["fleet"])
         let endpoint = FleetPluginEndpoint(url: "http://127.0.0.1:9/mcp/token", claudeConfigPath: file.path)
-        let args = FleetPluginLaunch.arguments(presetID: "claude", endpoint: endpoint)
-        XCTAssertEqual(args, ["--mcp-config", file.path])
-        XCTAssertFalse(args.contains("--strict-mcp-config"))
-        XCTAssertEqual(FleetPluginLaunch.arguments(presetID: "cursor", endpoint: endpoint), [])
-        XCTAssertEqual(FleetPluginLaunch.arguments(presetID: "gemini", endpoint: endpoint), [])
-        XCTAssertEqual(FleetPluginLaunch.arguments(presetID: "opencode", endpoint: endpoint), [])
-        XCTAssertEqual(FleetPluginLaunch.arguments(presetID: "shell", endpoint: endpoint), [])
+        let spec = FleetPluginLaunch.spec(presetID: "claude", endpoint: endpoint)
+        XCTAssertEqual(spec.arguments, ["--mcp-config", file.path])
+        XCTAssertFalse(spec.arguments.contains("--strict-mcp-config"))
+        XCTAssertTrue(spec.environment.isEmpty)
+        XCTAssertTrue(FleetPluginLaunch.spec(presetID: "cursor", endpoint: endpoint).isEmpty)
+        XCTAssertTrue(FleetPluginLaunch.spec(presetID: "gemini", endpoint: endpoint).isEmpty)
+        XCTAssertTrue(FleetPluginLaunch.spec(presetID: "opencode", endpoint: endpoint).isEmpty)
+        XCTAssertTrue(FleetPluginLaunch.spec(presetID: "shell", endpoint: endpoint).isEmpty)
+    }
+
+    func testGeminiSettingsLayerOverAnAdministratorFile() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = "http://127.0.0.1:9/mcp/token"
+        let administrator = directory.appendingPathComponent("system-settings.json")
+        let body = """
+        {"admin":{"secureModeEnabled":true},"mcpServers":{"other":{"httpUrl":"http://example.test/mcp"}}}
+        """
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(body.utf8).write(to: administrator)
+
+        let file = try XCTUnwrap(
+            try FleetPluginFiles.writeGeminiSettings(
+                url: url,
+                directory: directory,
+                systemSettings: administrator
+            )
+        )
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
+        )
+        XCTAssertEqual((object["admin"] as? [String: Any])?["secureModeEnabled"] as? Bool, true)
+        let servers = try XCTUnwrap(object["mcpServers"] as? [String: Any])
+        XCTAssertEqual(Set(servers.keys), ["fleet", "other"])
+        let fleet = try XCTUnwrap(servers["fleet"] as? [String: Any])
+        XCTAssertEqual(fleet["httpUrl"] as? String, url)
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        XCTAssertEqual(attributes[.posixPermissions] as? NSNumber, NSNumber(value: 0o600))
+
+        let spec = FleetPluginLaunch.spec(
+            presetID: "gemini",
+            endpoint: FleetPluginEndpoint(
+                url: url,
+                claudeConfigPath: "/tmp/claude-mcp.json",
+                geminiSettingsPath: file.path
+            )
+        )
+        XCTAssertTrue(spec.arguments.isEmpty)
+        XCTAssertEqual(spec.environment, ["GEMINI_CLI_SYSTEM_SETTINGS_PATH": file.path])
+    }
+
+    func testGeminiSettingsAreSkippedWhenTheAdministratorFileIsUnreadable() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let broken = directory.appendingPathComponent("broken.json")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("{not json".utf8).write(to: broken)
+
+        let file = try FleetPluginFiles.writeGeminiSettings(
+            url: "http://127.0.0.1:9/mcp/token",
+            directory: directory,
+            systemSettings: broken
+        )
+        XCTAssertNil(file)
+    }
+
+    func testOpencodeConfigAndPrivateServer() throws {
+        let url = "http://127.0.0.1:9/mcp/token"
+        let config = FleetPluginFiles.opencodeConfig(url: url)
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(config.utf8)) as? [String: Any]
+        )
+        let mcp = try XCTUnwrap(object["mcp"] as? [String: Any])
+        let fleet = try XCTUnwrap(mcp["fleet"] as? [String: Any])
+        XCTAssertEqual(fleet["type"] as? String, "remote")
+        XCTAssertEqual(fleet["url"] as? String, url)
+
+        let spec = FleetPluginLaunch.spec(
+            presetID: "opencode",
+            endpoint: FleetPluginEndpoint(
+                url: url,
+                claudeConfigPath: "/tmp/claude-mcp.json",
+                opencodeConfig: config
+            )
+        )
+        XCTAssertEqual(spec.arguments, ["--standalone"])
+        XCTAssertEqual(spec.environment, ["OPENCODE_CONFIG_CONTENT": config])
+        XCTAssertEqual(
+            spec.applying(to: ["TERM": "xterm-256color"]),
+            ["TERM": "xterm-256color", "OPENCODE_CONFIG_CONTENT": config]
+        )
+    }
+
+    func testGeminiAndOpencodeChildSessionsReceiveThePlugin() async throws {
+        let endpoint = FleetPluginEndpoint(
+            url: "http://127.0.0.1:9/mcp/token",
+            claudeConfigPath: "/tmp/fleet-plugin-test/claude-mcp.json",
+            geminiSettingsPath: "/tmp/fleet-plugin-test/gemini-settings.json",
+            opencodeConfig: FleetPluginFiles.opencodeConfig(url: "http://127.0.0.1:9/mcp/token")
+        )
+        let stub = StubDaemon()
+        let handler = PluginHandler(
+            daemon: stub,
+            presets: [
+                PluginPreset(id: "gemini", binary: "gemini", arguments: []),
+                PluginPreset(id: "opencode", binary: "opencode", arguments: []),
+            ],
+            resolve: { name in
+                switch (name as NSString).lastPathComponent {
+                case "gemini": return "/opt/homebrew/bin/gemini"
+                case "opencode": return "/opt/homebrew/bin/opencode"
+                default: return nil
+                }
+            },
+            directoryExists: { _ in true },
+            endpoint: endpoint,
+            uniqueSuffix: { "1" }
+        )
+
+        let gemini = await handler.call(tool: "orchestrate", arguments: json("""
+        {"action":"create","preset":"gemini","cwd":"/tmp/work","parent_id":"parent"}
+        """))
+        XCTAssertFalse(gemini.isError)
+        let geminiSession = try XCTUnwrap(stub.created.last)
+        XCTAssertEqual(geminiSession.args, [])
+        XCTAssertEqual(
+            geminiSession.env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"],
+            "/tmp/fleet-plugin-test/gemini-settings.json"
+        )
+
+        let opencode = await handler.call(tool: "orchestrate", arguments: json("""
+        {"action":"create","preset":"opencode","cwd":"/tmp/work","parent_id":"parent"}
+        """))
+        XCTAssertFalse(opencode.isError)
+        let opencodeSession = try XCTUnwrap(stub.created.last)
+        XCTAssertEqual(opencodeSession.args, ["--standalone"])
+        XCTAssertEqual(opencodeSession.env["OPENCODE_CONFIG_CONTENT"], endpoint.opencodeConfig)
+
+        let planned = await handler.call(tool: "plan", arguments: json("""
+        {"action":"put","parent_id":"parent","steps":[{"preset":"gemini","cwd":"/tmp/work"}]}
+        """))
+        XCTAssertFalse(planned.isError)
+        let plan = try XCTUnwrap(stub.plans.last)
+        XCTAssertEqual(
+            plan.steps[0].env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"],
+            "/tmp/fleet-plugin-test/gemini-settings.json"
+        )
+        XCTAssertNil(plan.steps[0].env["FLEET_SESSION_ID"])
+    }
+
+    private func temporaryDirectory() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("fleet-plugin-test-\(UUID().uuidString)", isDirectory: true)
     }
 
     private func json(_ text: String) -> Data {

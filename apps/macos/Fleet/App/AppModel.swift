@@ -1161,15 +1161,17 @@ final class AppModel {
             showNotice(UserNotice(notice))
         }
         var launchArguments = launch.arguments
+        var pluginSpec = FleetPluginSpec()
         if let endpoint = plugin.currentEndpoint() {
-            launchArguments += AgentCatalog.pluginArguments(program: program, endpoint: endpoint)
+            pluginSpec = AgentCatalog.pluginLaunch(program: program, endpoint: endpoint)
+            launchArguments += pluginSpec.arguments
         }
         let spec = CreateSession(
             id: id,
             program: program,
             args: launchArguments,
             cwd: cwd,
-            env: sessionEnvironment(sessionID: id),
+            env: pluginSpec.applying(to: sessionEnvironment(sessionID: id)),
             size: TerminalSize(rows: 24, cols: 80)
         )
         let session = try await client.createSession(spec)

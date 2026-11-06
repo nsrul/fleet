@@ -169,6 +169,15 @@ scroll keys or `Page Up` / `Page Down` in that state.
   and daemon auto-start.
 - Reconnect flow and an empty state when the daemon is unavailable.
 
+## Agent integration
+
+Claude Code, Codex, Gemini CLI, and OpenCode sessions receive the app's
+`orchestrate`, `watch`, and `plan` MCP tools through a loopback server. The
+wiring is process-scoped: Fleet does not edit the user's own agent
+configuration. The per-agent transport, the steps for adding another CLI, and
+the verification checklist are in
+[`docs/AGENT_INTEGRATION.md`](../../docs/AGENT_INTEGRATION.md).
+
 ## Known limitations
 
 - One project at a time; no project switching or worktree management.
