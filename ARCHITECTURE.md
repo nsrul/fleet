@@ -381,7 +381,7 @@ The macOS prototype adds `apps/macos/scripts/verify-terminal.sh`, which runs the
 app-level checklist covers two live panes, keyboard input, Unicode, selection
 and copy, scrollback, pane/window resize, focus switching, and reattachment
 after relaunch. It was exercised with Claude Code 2.1.311 and Gemini CLI 0.46.0
-on macOS 27. The app has no CI job yet; see `apps/macos/README.md`.
+on macOS 27. Pull requests run [`.github/workflows/ci.yml`](.github/workflows/ci.yml): Rust formatting, Clippy, and workspace tests on Linux, and `scripts/verify.sh` on macOS.
 
 ## 13. Key decisions
 

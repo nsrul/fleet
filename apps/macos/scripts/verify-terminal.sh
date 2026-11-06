@@ -7,8 +7,13 @@ ROOT="$(cd "$APP_DIR/../.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/fleet-verify.XXXXXX")"
 SOCKET="$TMP/daemon.sock"
 DAEMON_PID=""
+LOG_DIR="${FLEET_CI_LOG_DIR:-}"
 
 cleanup() {
+  if [ -n "$LOG_DIR" ] && [ -f "$TMP/daemon.log" ]; then
+    mkdir -p "$LOG_DIR"
+    cp "$TMP/daemon.log" "$LOG_DIR/daemon.log"
+  fi
   if [ -n "$DAEMON_PID" ] && kill -0 "$DAEMON_PID" 2>/dev/null; then
     kill "$DAEMON_PID" 2>/dev/null || true
     wait "$DAEMON_PID" 2>/dev/null || true
