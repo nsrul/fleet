@@ -82,6 +82,8 @@ print(receive())
 
 A SwiftUI frontend lives in `apps/macos`. It connects to the daemon, shows one project with two live terminal panes, and reads git status for a context panel. Requirements, shortcuts, limitations, and recorded verification are in [`apps/macos/README.md`](apps/macos/README.md). The frontend decision is recorded in [`docs/decisions/0001-MACOS-FRONTEND.md`](docs/decisions/0001-MACOS-FRONTEND.md).
 
+The app also hosts the built-in MCP plugin that gives Claude Code, Codex, Gemini CLI, and OpenCode the `orchestrate`, `watch`, and `plan` tools. How each agent is wired, and how to add another agent CLI without editing the user's own configuration, is in [`docs/AGENT_INTEGRATION.md`](docs/AGENT_INTEGRATION.md).
+
 ```sh
 apps/macos/scripts/build.sh
 apps/macos/scripts/demo.sh

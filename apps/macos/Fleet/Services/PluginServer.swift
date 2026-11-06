@@ -20,7 +20,7 @@ final class PluginServer: @unchecked Sendable {
     private var listenFD: Int32 = -1
     private var acceptTask: Task<Void, Never>?
     private var handler: PluginHandler?
-    private var configURL: URL?
+    private var configURLs: [URL] = []
     private var endpoint: FleetPluginEndpoint?
 
     init(token: String) {
@@ -48,13 +48,25 @@ final class PluginServer: @unchecked Sendable {
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("fleet-plugin-\(getuid())", isDirectory: true)
             let url = "http://127.0.0.1:\(port)/mcp/\(token)"
-            let config = try FleetPluginFiles.writeClaudeConfig(url: url, directory: directory)
-            let endpoint = FleetPluginEndpoint(url: url, claudeConfigPath: config.path)
+            let claudeConfig = try FleetPluginFiles.writeClaudeConfig(url: url, directory: directory)
+            let geminiSettings = try? FleetPluginFiles.writeGeminiSettings(
+                url: url,
+                directory: directory,
+                systemSettings: FleetPluginFiles.geminiSystemSettingsPath(
+                    environment: ProcessInfo.processInfo.environment
+                )
+            )
+            let endpoint = FleetPluginEndpoint(
+                url: url,
+                claudeConfigPath: claudeConfig.path,
+                geminiSettingsPath: geminiSettings?.path,
+                opencodeConfig: FleetPluginFiles.opencodeConfig(url: url)
+            )
             let handler = makeHandler(endpoint)
             lock.lock()
             listenFD = fd
             self.handler = handler
-            configURL = config
+            configURLs = [claudeConfig] + [geminiSettings].compactMap { $0 }
             self.endpoint = endpoint
             lock.unlock()
         } catch {
@@ -83,17 +95,15 @@ final class PluginServer: @unchecked Sendable {
         let task = acceptTask
         acceptTask = nil
         handler = nil
-        let config = configURL
-        configURL = nil
+        let config = configURLs
+        configURLs = []
         endpoint = nil
         lock.unlock()
         if fd >= 0 {
             close(fd)
         }
         task?.cancel()
-        if let config {
-            FleetPluginFiles.remove(config)
-        }
+        FleetPluginFiles.remove(config)
     }
 
     private func currentListenFD() -> Int32 {

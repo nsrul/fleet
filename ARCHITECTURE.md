@@ -20,7 +20,7 @@ The architecture separates process ownership from presentation:
 ```text
 Desktop UI (SwiftUI, prototype) ─┐
 CLI adapter (planned) ─┼─ Unix socket (#3) ──────────┐
-MCP adapter (planned) ─┘                             │
+MCP adapter (app-hosted) ─┘                          │
                                                      v
                                             fleet-daemon
                                                      │
@@ -193,7 +193,7 @@ Resize validates non-zero rows and columns, calls `MasterPty::resize`, and updat
 
 ## 7. Local API
 
-Issue #3 adds a versioned API for local clients. The transport is Unix-only in this pass; the wire vocabulary and framing are shared with future adapters.
+Issue #3 adds a versioned API for local clients. The transport is Unix-only in this pass; the wire vocabulary and framing are shared with future adapters. The macOS app hosts an MCP adapter for installed agent CLIs on top of this API; its per-agent wiring is described in [`docs/AGENT_INTEGRATION.md`](docs/AGENT_INTEGRATION.md).
 
 ### Transport and ownership
 

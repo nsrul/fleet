@@ -97,10 +97,11 @@ enum AgentCatalog {
         }
     }
 
-    /// Extra arguments that point a supported preset at this app's plugin.
-    /// Shell, custom commands, and presets without a session-scoped flag get none.
-    static func pluginArguments(program: String, endpoint: FleetPluginEndpoint) -> [String] {
-        guard let preset = preset(forProgram: program) else { return [] }
-        return FleetPluginLaunch.arguments(presetID: preset.id, endpoint: endpoint)
+    /// Arguments and environment that point a supported preset at this app's
+    /// plugin. Shell, custom commands, and presets without a session-scoped
+    /// hook get an empty spec.
+    static func pluginLaunch(program: String, endpoint: FleetPluginEndpoint) -> FleetPluginSpec {
+        guard let preset = preset(forProgram: program) else { return FleetPluginSpec() }
+        return FleetPluginLaunch.spec(presetID: preset.id, endpoint: endpoint)
     }
 }

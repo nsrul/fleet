@@ -2,11 +2,23 @@ import Foundation
 
 public struct FleetPluginEndpoint: Equatable, Sendable {
     public var url: String
+    /// File passed to Claude Code through `--mcp-config`.
     public var claudeConfigPath: String
+    /// File passed to Gemini CLI through `GEMINI_CLI_SYSTEM_SETTINGS_PATH`.
+    public var geminiSettingsPath: String?
+    /// Inline JSON passed to OpenCode through `OPENCODE_CONFIG_CONTENT`.
+    public var opencodeConfig: String?
 
-    public init(url: String, claudeConfigPath: String) {
+    public init(
+        url: String,
+        claudeConfigPath: String,
+        geminiSettingsPath: String? = nil,
+        opencodeConfig: String? = nil
+    ) {
         self.url = url
         self.claudeConfigPath = claudeConfigPath
+        self.geminiSettingsPath = geminiSettingsPath
+        self.opencodeConfig = opencodeConfig
     }
 }
 
@@ -22,24 +34,152 @@ public struct PluginPreset: Equatable, Sendable {
     }
 }
 
-/// Claude and Codex accept one MCP server for a single launch.
-/// Cursor Agent, Gemini CLI, and OpenCode can only add a server by writing
-/// their own config files, so those presets are left unwired.
+/// Launch-time arguments and environment that point one agent CLI at the
+/// plugin. `FleetPluginLaunch.spec` is the only place that knows how a preset
+/// accepts an MCP server, so UI launches and agent-spawned sessions stay equal.
+public struct FleetPluginSpec: Equatable, Sendable {
+    public var arguments: [String]
+    public var environment: [String: String]
+
+    public init(arguments: [String] = [], environment: [String: String] = [:]) {
+        self.arguments = arguments
+        self.environment = environment
+    }
+
+    public var isEmpty: Bool {
+        arguments.isEmpty && environment.isEmpty
+    }
+
+    /// Layers the plugin environment over a session environment.
+    public func applying(to base: [String: String]) -> [String: String] {
+        base.merging(environment) { _, plugin in plugin }
+    }
+}
+
+/// How each preset receives the plugin.
+///
+/// Claude Code and Codex take a server for one launch on the command line.
+/// Gemini CLI and OpenCode read their servers from configuration, so Fleet
+/// points a process-scoped environment variable at a temporary file or inline
+/// JSON instead of editing the user's own configuration.
 public enum FleetPluginLaunch {
-    public static func arguments(presetID: String, endpoint: FleetPluginEndpoint) -> [String] {
+    public static func spec(presetID: String, endpoint: FleetPluginEndpoint) -> FleetPluginSpec {
         switch presetID {
         case "claude":
-            return ["--mcp-config", endpoint.claudeConfigPath]
+            return FleetPluginSpec(arguments: ["--mcp-config", endpoint.claudeConfigPath])
         case "codex":
-            return ["-c", "mcp_servers.fleet.url=\"\(endpoint.url)\""]
+            return FleetPluginSpec(arguments: ["-c", "mcp_servers.fleet.url=\"\(endpoint.url)\""])
+        case "gemini":
+            guard let path = endpoint.geminiSettingsPath else { return FleetPluginSpec() }
+            return FleetPluginSpec(
+                environment: [FleetPluginFiles.geminiSystemSettingsEnvironmentKey: path]
+            )
+        case "opencode":
+            guard let config = endpoint.opencodeConfig else { return FleetPluginSpec() }
+            // A shared OpenCode background service ignores the environment of
+            // the client that attaches to it. `--standalone` starts a private
+            // server in this process, which reads OPENCODE_CONFIG_CONTENT.
+            return FleetPluginSpec(
+                arguments: ["--standalone"],
+                environment: ["OPENCODE_CONFIG_CONTENT": config]
+            )
         default:
-            return []
+            return FleetPluginSpec()
         }
     }
 }
 
 public enum FleetPluginFiles {
+    public static let geminiSystemSettingsEnvironmentKey = "GEMINI_CLI_SYSTEM_SETTINGS_PATH"
+
+    /// The system settings file Gemini CLI would read, honoring a path the
+    /// app itself inherited.
+    public static func geminiSystemSettingsPath(environment: [String: String]) -> URL {
+        if let path = environment[geminiSystemSettingsEnvironmentKey], !path.isEmpty {
+            return URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
+        }
+        return URL(fileURLWithPath: "/Library/Application Support/GeminiCli/settings.json")
+    }
+
     public static func writeClaudeConfig(url: String, directory: URL) throws -> URL {
+        try prepareDirectory(directory)
+        let file = directory.appendingPathComponent("claude-mcp.json")
+        try write(
+            [
+                "mcpServers": [
+                    "fleet": [
+                        "type": "http",
+                        "url": url,
+                    ],
+                ],
+            ],
+            to: file
+        )
+        return file
+    }
+
+    /// Adds Fleet to Gemini CLI's system settings without dropping the settings
+    /// an administrator already installed. Returns nil when that file exists
+    /// but cannot be read, rather than shadowing it for the session.
+    public static func writeGeminiSettings(
+        url: String,
+        directory: URL,
+        systemSettings: URL?
+    ) throws -> URL? {
+        var root: [String: Any] = [:]
+        if let systemSettings, FileManager.default.fileExists(atPath: systemSettings.path) {
+            guard let data = try? Data(contentsOf: systemSettings),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            root = object
+        }
+        var servers: [String: Any]
+        if let existing = root["mcpServers"] {
+            guard let object = existing as? [String: Any] else { return nil }
+            servers = object
+        } else {
+            servers = [:]
+        }
+        servers["fleet"] = ["httpUrl": url]
+        root["mcpServers"] = servers
+        try prepareDirectory(directory)
+        let file = directory.appendingPathComponent("gemini-settings.json")
+        try write(root, to: file)
+        return file
+    }
+
+    /// Inline OpenCode configuration. This is the v1 schema, which OpenCode v2
+    /// still normalizes into `mcp.servers`.
+    public static func opencodeConfig(url: String) -> String {
+        let root: [String: Any] = [
+            "mcp": [
+                "fleet": [
+                    "type": "remote",
+                    "url": url,
+                ],
+            ],
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]),
+              let text = String(data: data, encoding: .utf8)
+        else { return "{}" }
+        return text
+    }
+
+    public static func remove(_ urls: [URL]) {
+        var directories = Set<String>()
+        for url in urls {
+            try? FileManager.default.removeItem(at: url)
+            directories.insert(url.deletingLastPathComponent().path)
+        }
+        for path in directories {
+            if let children = try? FileManager.default.contentsOfDirectory(atPath: path),
+               children.isEmpty {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+        }
+    }
+
+    private static func prepareDirectory(_ directory: URL) throws {
         try FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true,
@@ -49,31 +189,15 @@ public enum FleetPluginFiles {
             [.posixPermissions: 0o700],
             ofItemAtPath: directory.path
         )
-        let file = directory.appendingPathComponent("claude-mcp.json")
-        let body: [String: Any] = [
-            "mcpServers": [
-                "fleet": [
-                    "type": "http",
-                    "url": url,
-                ],
-            ],
-        ]
-        let data = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+    }
+
+    private static func write(_ object: [String: Any], to file: URL) throws {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         try data.write(to: file, options: .atomic)
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o600],
             ofItemAtPath: file.path
         )
-        return file
-    }
-
-    public static func remove(_ url: URL) {
-        try? FileManager.default.removeItem(at: url)
-        let directory = url.deletingLastPathComponent()
-        if let children = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
-           children.isEmpty {
-            try? FileManager.default.removeItem(at: directory)
-        }
     }
 }
 
@@ -182,7 +306,7 @@ public struct PluginHandler: Sendable {
             program: launch.program,
             args: launch.arguments,
             cwd: cwd,
-            env: sessionEnvironment(sessionID: sessionID),
+            env: launch.spec.applying(to: sessionEnvironment(sessionID: sessionID)),
             size: TerminalSize(rows: 24, cols: 80),
             parentID: parentID,
             brief: string(object, "brief")
@@ -252,7 +376,7 @@ public struct PluginHandler: Sendable {
                     program: launch.program,
                     args: launch.arguments,
                     cwd: launch.cwd,
-                    env: planStepEnvironment(),
+                    env: launch.spec.applying(to: planStepEnvironment()),
                     brief: string(raw, "brief")
                 ))
             }
@@ -277,6 +401,7 @@ public struct PluginHandler: Sendable {
     private struct ResolvedLaunch {
         var program: String
         var arguments: [String]
+        var spec: FleetPluginSpec
         var cwd: String
     }
 
@@ -324,10 +449,12 @@ public struct PluginHandler: Sendable {
         }
         var arguments = preset?.arguments ?? []
         arguments.append(contentsOf: extra)
+        var spec = FleetPluginSpec()
         if let endpoint, let id = preset?.id ?? presetID(forProgram: program) {
-            arguments.append(contentsOf: FleetPluginLaunch.arguments(presetID: id, endpoint: endpoint))
+            spec = FleetPluginLaunch.spec(presetID: id, endpoint: endpoint)
+            arguments.append(contentsOf: spec.arguments)
         }
-        return ResolvedLaunch(program: program, arguments: arguments, cwd: expanded)
+        return ResolvedLaunch(program: program, arguments: arguments, spec: spec, cwd: expanded)
     }
 
     private func presetID(forProgram program: String) -> String? {
