@@ -56,9 +56,66 @@ struct FleetCommands: Commands {
 
         CommandMenu("Session") {
             Button("Focus Terminal") {
-                model.focusPane(.primary)
+                model.focusTerminal()
             }
-            .keyboardShortcut("1", modifiers: .command)
+
+            Button("New Tab") {
+                model.showNewAgent = true
+            }
+            .keyboardShortcut("t", modifiers: .command)
+
+            Button("Close Tab") {
+                model.closeActiveTab()
+            }
+            .keyboardShortcut("w", modifiers: .command)
+            .disabled(model.workspace.focusedPane?.activeTabID == nil)
+
+            Button("Close Window") {
+                NSApp.keyWindow?.performClose(nil)
+            }
+            .keyboardShortcut("w", modifiers: [.command, .shift])
+
+            Divider()
+
+            tabButton(1)
+            tabButton(2)
+            tabButton(3)
+            tabButton(4)
+            tabButton(5)
+            tabButton(6)
+            tabButton(7)
+            tabButton(8)
+            tabButton(9)
+
+            Button("Next Tab") {
+                model.cycleTab(forward: true)
+            }
+            .keyboardShortcut(.tab, modifiers: .control)
+
+            Button("Previous Tab") {
+                model.cycleTab(forward: false)
+            }
+            .keyboardShortcut(.tab, modifiers: [.control, .shift])
+
+            Divider()
+
+            Button("Focus Next Pane") {
+                model.cyclePane(forward: true)
+            }
+            .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+            .disabled(model.workspace.panes.count < 2)
+
+            Button("Focus Previous Pane") {
+                model.cyclePane(forward: false)
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+            .disabled(model.workspace.panes.count < 2)
+
+            Button("Split Pane…") {
+                model.beginSplit()
+            }
+            .keyboardShortcut("\\", modifiers: [.command, .shift])
+            .disabled(model.workspace.panes.count != 1 || !model.connection.isConnected)
 
             Divider()
 
@@ -102,5 +159,13 @@ struct FleetCommands: Commands {
                 Task { await model.reconnect() }
             }
         }
+    }
+
+    private func tabButton(_ index: Int) -> some View {
+        Button("Select Tab \(index)") {
+            model.selectTab(index: index)
+        }
+        .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
+        .disabled(!model.canSelectTab(index: index))
     }
 }

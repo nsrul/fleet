@@ -14,6 +14,7 @@
 		13109FC54396304226554F05 /* CodexControlSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 142F8FCE83D842FE3E198AB8 /* CodexControlSocket.swift */; };
 		1EAE0C08A2AFF2B6A92722B9 /* ContextPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 484119FE72EF462E66228A49 /* ContextPanelView.swift */; };
 		26745FF90D096984AFE879EB /* TerminalFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0BE833F68BC553546DA2BF /* TerminalFont.swift */; };
+		2A49A621CAB067CDDAAE3100 /* WorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA8D3444CF4AE87788433D32 /* WorkspaceModel.swift */; };
 		2BEB17A9980A7937CD4DBC7F /* DaemonLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85343EA7A7BA41C4E21E7957 /* DaemonLauncher.swift */; };
 		34206BC65CD9FC00F732384B /* Fleet.icns in Resources */ = {isa = PBXBuildFile; fileRef = D4C8FC928C7647044BAFEB21 /* Fleet.icns */; };
 		3718DE84C778244F8EFD4F23 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7057DA52D27913E1D3526C /* ConnectionView.swift */; };
@@ -31,6 +32,7 @@
 		B4D8F15DCF28023F64E0839A /* UserNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = B58FFE1EF1BBA9D15EFFC2D0 /* UserNotice.swift */; };
 		B61FC141735810AF7207956E /* PluginServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D54203F7C8A707119CEB1FD5 /* PluginServer.swift */; };
 		B685083AD8536A2DF3E50E20 /* PanelLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF9999C19AD118E18E796F39 /* PanelLayout.swift */; };
+		B6B282E666881AF42E9024DE /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27FFEB46B0D2CFEDE44474AC /* WorkspaceView.swift */; };
 		C6098BD858D810DC888F935F /* SettingsPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB9E41730C985DF8E35BC16 /* SettingsPanes.swift */; };
 		CBC4AE6FF0107F9397EB76F6 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BCBA3F5A5F6EABB50CE9281 /* AppModel.swift */; };
 		D756C398FE4533275A8C77E8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85642D6731633203E2C30172 /* SettingsView.swift */; };
@@ -48,6 +50,7 @@
 		17219B7EC0DB7FBCAD7F59AC /* ContextTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextTerminalView.swift; sourceTree = "<group>"; };
 		1A1B6F64E7A3960A31BBFFD9 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		1BB9E41730C985DF8E35BC16 /* SettingsPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPanes.swift; sourceTree = "<group>"; };
+		27FFEB46B0D2CFEDE44474AC /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
 		2CE1CF52BE4D30DC72816827 /* FleetKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = FleetKit; path = FleetKit; sourceTree = SOURCE_ROOT; };
 		484119FE72EF462E66228A49 /* ContextPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextPanelView.swift; sourceTree = "<group>"; };
 		4B0BE833F68BC553546DA2BF /* TerminalFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFont.swift; sourceTree = "<group>"; };
@@ -72,6 +75,7 @@
 		DA8A45647CE4DC7AC70CDE5D /* TerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalController.swift; sourceTree = "<group>"; };
 		DB7773FB40FDCB7F750DD7EA /* TerminalAreaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAreaView.swift; sourceTree = "<group>"; };
 		DF51DA43BD25101D2EF80906 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		EA8D3444CF4AE87788433D32 /* WorkspaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceModel.swift; sourceTree = "<group>"; };
 		ED0B004130C9B43A122F190E /* ClaudePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudePreview.swift; sourceTree = "<group>"; };
 		F0019E096F9C79D99A6F9D83 /* TerminalDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalDrop.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -126,6 +130,7 @@
 			children = (
 				6BCBA3F5A5F6EABB50CE9281 /* AppModel.swift */,
 				B58FFE1EF1BBA9D15EFFC2D0 /* UserNotice.swift */,
+				EA8D3444CF4AE87788433D32 /* WorkspaceModel.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -155,6 +160,7 @@
 				DB7773FB40FDCB7F750DD7EA /* TerminalAreaView.swift */,
 				D09011A40F3BE078C4A1C838 /* TerminalPaneView.swift */,
 				913E8BFEADA4AD1C81F0C47F /* Theme.swift */,
+				27FFEB46B0D2CFEDE44474AC /* WorkspaceView.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -320,6 +326,8 @@
 				6A497CA959385417B2F8816A /* TerminalPaneView.swift in Sources */,
 				6E1A67C0F08DD0534DF37749 /* Theme.swift in Sources */,
 				B4D8F15DCF28023F64E0839A /* UserNotice.swift in Sources */,
+				2A49A621CAB067CDDAAE3100 /* WorkspaceModel.swift in Sources */,
+				B6B282E666881AF42E9024DE /* WorkspaceView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

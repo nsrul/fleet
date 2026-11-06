@@ -100,8 +100,10 @@ Codex, falls back to Claude Code and Gemini CLI, and finally to two shells. The
 session IDs are `demo-claude` / `demo-codex` or `demo-claude` / `demo-gemini`
 (or `demo-shell-1` / `demo-shell-2`). Existing demo sessions are stopped first.
 
-The layout defaults to stacked panes. Use the layout control in the toolbar to
-switch to side-by-side, or the keyboard shortcuts below.
+Each pane has its own tabs. Drag a tab to an edge of the workspace to split
+side by side or stacked. The daemon keeps that arrangement, so quitting the
+app and opening it again restores the tabs and replays each session. Settings
+chooses the direction used by Split Pane.
 
 ## Screenshot preview
 
@@ -117,9 +119,13 @@ window that is already open is left alone.
 
 | Shortcut | Action |
 | --- | --- |
-| `Cmd+1` / `Cmd+2` | Focus the first or second pane |
-| `Cmd+N` | New agent sheet |
-| `Cmd+\` | Split or unsplit the second pane |
+| `Cmd+T` / `Cmd+N` | New agent sheet, opened in the focused pane |
+| `Cmd+W` | Close the active tab. The session keeps running |
+| `Cmd+Shift+W` | Close the window |
+| `Cmd+1` through `Cmd+9` | Select that tab in the focused pane |
+| `Control+Tab` / `Control+Shift+Tab` | Next or previous tab |
+| `Cmd+Option+Right` / `Left` | Move focus between panes |
+| `Cmd+Shift+\` | Split the focused pane and pick the other session |
 | `Cmd+K` | Clear the focused terminal |
 | `Cmd+0` | Show or hide the context panel |
 | `Cmd+Shift+R` | Refresh git status |
@@ -159,13 +165,12 @@ scroll keys or `Page Up` / `Page Down` in that state.
 
 - 256 pt sidebar with project header, filters, session rows, context menus, and
   a daemon status footer.
-- Stacked or side-by-side terminal panes with session metadata, focus, Split,
-  Fork, and status bars.
+- Tabbed panes, side-by-side or stacked, with session titles, focus, and status.
 - Context panel that follows the focused agent's working tree, shows the diff
   for the file the agent just changed, and can open a shell for Helix.
 - New-agent sheet with agent presets, working directory, and optional name.
 - Settings for appearance, terminal font, cursor, spacing, and scrollback,
-  the launch split, stop confirmation, the new-agent folder, the socket path,
+  the keyboard-split direction, stop confirmation, the new-agent folder, the socket path,
   and daemon auto-start.
 - Reconnect flow and an empty state when the daemon is unavailable.
 

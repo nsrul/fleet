@@ -16,7 +16,7 @@ use fleet_protocol::{
         ApiError, AttachedSession, Base64Bytes, ClientMessage, Command, CreateSession, ErrorCode,
         Event, MAX_FRAME_BYTES, MAX_INPUT_BYTES, OutputSnapshot, PlanInfo, PlanState, PlanStepSpec,
         PutPlan, ResponseData, ServerMessage, SessionExit, SessionInfo, SessionStatus,
-        SidebarClass, StepState, TerminalSize,
+        SidebarClass, SplitAxis, StepState, TerminalSize, Workspace, WorkspacePane, WorkspaceTab,
     },
 };
 use support::{Daemon, WAIT_LIMIT};
@@ -69,6 +69,11 @@ impl Client {
                     capabilities
                         .iter()
                         .any(|capability| capability == fleet_protocol::api::CAPABILITY_TASKS)
+                );
+                assert!(
+                    capabilities
+                        .iter()
+                        .any(|capability| capability == fleet_protocol::api::CAPABILITY_WORKSPACE)
                 );
             }
             other => panic!("expected a welcome, got {other:?}"),
@@ -260,7 +265,7 @@ async fn collect_until(client: &mut Client, output: &mut Output, needle: &str) -
             .expect("timed out waiting for output");
         match event {
             Event::Output { .. } => output.apply(&event),
-            Event::Status { .. } | Event::SessionsChanged => {}
+            Event::Status { .. } | Event::SessionsChanged | Event::WorkspaceChanged { .. } => {}
             Event::DaemonStopping => panic!("the daemon stopped while waiting for {needle:?}"),
         }
     }
@@ -283,7 +288,7 @@ async fn wait_for_status(
                 session_id: id,
                 status,
             } if id == session_id => return status,
-            Event::Status { .. } | Event::SessionsChanged => {}
+            Event::Status { .. } | Event::SessionsChanged | Event::WorkspaceChanged { .. } => {}
             Event::Output { .. } => output.apply(&event),
             Event::DaemonStopping => panic!("the daemon stopped while waiting for status"),
         }
@@ -1147,4 +1152,189 @@ async fn creating_a_session_tells_a_client_that_has_not_attached() {
         .await
         .expect("create a session");
     assert!(matches!(client.next_event().await, Event::SessionsChanged));
+}
+
+fn expect_workspace(data: ResponseData) -> Workspace {
+    match data {
+        ResponseData::Workspace(workspace) => workspace,
+        other => panic!("expected a workspace, got {other:?}"),
+    }
+}
+
+fn workspace_tab(id: &str, session: &str) -> WorkspaceTab {
+    WorkspaceTab {
+        id: id.into(),
+        session_id: session.into(),
+    }
+}
+
+fn workspace_pane(id: &str, tabs: Vec<WorkspaceTab>, active: &str) -> WorkspacePane {
+    WorkspacePane {
+        id: id.into(),
+        tabs,
+        active_tab_id: Some(active.into()),
+    }
+}
+
+#[tokio::test]
+async fn workspace_layout_is_validated_shared_and_pruned() {
+    let daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+
+    let empty = expect_workspace(
+        client
+            .request(Command::GetWorkspace)
+            .await
+            .expect("read the empty workspace"),
+    );
+    assert_eq!(empty, Workspace::empty());
+
+    client
+        .request(create_session("one", "sleep 30"))
+        .await
+        .expect("create one");
+    client
+        .request(create_session("two", "sleep 30"))
+        .await
+        .expect("create two");
+    assert!(matches!(client.next_event().await, Event::SessionsChanged));
+    assert!(matches!(client.next_event().await, Event::SessionsChanged));
+
+    let layout = Workspace {
+        split: Some(SplitAxis::Horizontal),
+        panes: vec![
+            workspace_pane("pane-a", vec![workspace_tab("tab-a", "one")], "tab-a"),
+            workspace_pane("pane-b", vec![workspace_tab("tab-b", "two")], "tab-b"),
+        ],
+        focused_pane_id: "pane-b".into(),
+    };
+    let stored = expect_workspace(
+        client
+            .request(Command::PutWorkspace {
+                workspace: layout.clone(),
+            })
+            .await
+            .expect("store the layout"),
+    );
+    assert_eq!(stored, layout);
+    match client.next_event().await {
+        Event::WorkspaceChanged { workspace } => assert_eq!(workspace, layout),
+        other => panic!("expected a workspace event, got {other:?}"),
+    }
+
+    let mut other = Client::connect(daemon.socket_path()).await;
+    other.hello().await;
+    let seen = expect_workspace(
+        other
+            .request(Command::GetWorkspace)
+            .await
+            .expect("the other client reads the same layout"),
+    );
+    assert_eq!(seen, layout);
+
+    let mut three = layout.clone();
+    three.panes.push(workspace_pane(
+        "pane-c",
+        vec![workspace_tab("tab-c", "two")],
+        "tab-c",
+    ));
+    let rejected = client
+        .request(Command::PutWorkspace { workspace: three })
+        .await
+        .unwrap_err();
+    assert_eq!(rejected.code, ErrorCode::InvalidWorkspace);
+
+    let mut duplicate = layout.clone();
+    duplicate.panes[1].tabs[0].session_id = "one".into();
+    let rejected = client
+        .request(Command::PutWorkspace {
+            workspace: duplicate,
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(rejected.code, ErrorCode::DuplicateWorkspaceTab);
+
+    let mut unknown = layout.clone();
+    unknown.panes[1].tabs[0].session_id = "missing".into();
+    let rejected = client
+        .request(Command::PutWorkspace { workspace: unknown })
+        .await
+        .unwrap_err();
+    assert_eq!(rejected.code, ErrorCode::SessionNotFound);
+
+    let mut dangling = layout.clone();
+    dangling.panes[0].active_tab_id = Some("missing-tab".into());
+    let rejected = client
+        .request(Command::PutWorkspace {
+            workspace: dangling,
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(rejected.code, ErrorCode::InvalidWorkspace);
+
+    let no_tabs = Workspace {
+        split: None,
+        panes: vec![WorkspacePane {
+            id: "only".into(),
+            tabs: vec![],
+            active_tab_id: None,
+        }],
+        focused_pane_id: "only".into(),
+    };
+    let rejected = client
+        .request(Command::PutWorkspace { workspace: no_tabs })
+        .await
+        .unwrap_err();
+    assert_eq!(rejected.code, ErrorCode::InvalidWorkspace);
+
+    client
+        .request(Command::StopSession { id: "one".into() })
+        .await
+        .expect("stop one");
+    client
+        .request(Command::RemoveSession { id: "one".into() })
+        .await
+        .expect("remove one");
+    let deadline = Instant::now() + WAIT_LIMIT;
+    let pruned = loop {
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for the pruned layout"
+        );
+        match client.next_event().await {
+            Event::WorkspaceChanged { workspace } => break workspace,
+            Event::SessionsChanged | Event::Status { .. } | Event::Output { .. } => {}
+            other => panic!("unexpected event while removing a session: {other:?}"),
+        }
+    };
+    assert_eq!(pruned.panes.len(), 1);
+    assert_eq!(pruned.panes[0].tabs[0].session_id, "two");
+    assert!(pruned.split.is_none());
+}
+
+#[tokio::test]
+async fn a_malformed_workspace_file_does_not_stop_the_daemon() {
+    let directory = tempfile::tempdir().expect("workspace directory");
+    std::fs::write(directory.path().join("workspace.json"), b"{not-json").unwrap();
+    let daemon = Daemon::spawn_at(None, directory.path().join("daemon.sock"));
+    let deadline = Instant::now() + WAIT_LIMIT;
+    let startup = daemon.log(deadline);
+    assert_eq!(startup["event"], "startup");
+    let reset = daemon.log(deadline);
+    assert_eq!(reset["event"], "workspace_reset");
+    assert_eq!(reset["reason"], "malformed");
+    let ready = daemon.log(deadline);
+    assert_eq!(ready["event"], "ready");
+
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+    let workspace = expect_workspace(
+        client
+            .request(Command::GetWorkspace)
+            .await
+            .expect("an empty workspace after a bad file"),
+    );
+    assert_eq!(workspace, Workspace::empty());
 }

@@ -6,6 +6,7 @@ public enum ClientEvent: Sendable {
     case status(sessionID: String, status: SessionStatus)
     case daemonStopping
     case sessionsChanged
+    case workspaceChanged(Workspace)
 }
 
 /// An async client for the Fleet local session API.
@@ -155,6 +156,22 @@ public actor FleetClient {
         return info
     }
 
+    public func getWorkspace() async throws -> Workspace {
+        let data = try await request(.getWorkspace)
+        guard case .workspace(let workspace) = data else {
+            throw FleetError.unexpectedResponse("expected a workspace")
+        }
+        return workspace
+    }
+
+    public func putWorkspace(_ workspace: Workspace) async throws -> Workspace {
+        let data = try await request(.putWorkspace(workspace))
+        guard case .workspace(let workspace) = data else {
+            throw FleetError.unexpectedResponse("expected a workspace")
+        }
+        return workspace
+    }
+
     public func getPlan(id: String) async throws -> PlanInfo {
         let data = try await request(.getPlan(id: id))
         guard case .plan(let info) = data else {
@@ -241,6 +258,8 @@ public actor FleetClient {
                 eventContinuation.yield(.daemonStopping)
             case .sessionsChanged:
                 eventContinuation.yield(.sessionsChanged)
+            case .workspaceChanged(let workspace):
+                eventContinuation.yield(.workspaceChanged(workspace))
             }
         }
     }

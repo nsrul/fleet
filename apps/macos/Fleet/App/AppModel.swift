@@ -26,14 +26,6 @@ enum ConnectionState: Equatable {
     }
 }
 
-enum PaneSlot: String, CaseIterable, Identifiable, Sendable {
-    case primary
-    case secondary
-
-    var id: String { rawValue }
-    var number: Int { self == .primary ? 1 : 2 }
-}
-
 enum SplitLayout: String, CaseIterable, Identifiable, Sendable {
     case stacked
     case sideBySide
@@ -172,11 +164,23 @@ enum AppAppearance: String, CaseIterable, Identifiable, Sendable {
 final class AppModel {
     var connection: ConnectionState = .idle
     var sessions: [SessionInfo] = []
-    var primarySessionID: String?
-    var secondarySessionID: String?
-    var focusedPane: PaneSlot = .primary
-    var isSplit = false
-    var splitLayout: SplitLayout = .stacked
+    /// Tabs, order, and split. The daemon keeps this when it advertises `workspace`.
+    var workspace = Workspace.empty {
+        didSet {
+            guard workspace != oldValue, !suppressWorkspaceSideEffects else { return }
+            if !suppressWorkspacePersistence {
+                scheduleWorkspaceSave()
+            }
+            noteWorkspaceFocus()
+        }
+    }
+    var persistsWorkspace = false
+    /// Divider position for a two-pane workspace. 0.5 is an even split.
+    var splitFraction = 0.5
+    var draggingTab: TabDrag?
+    var showSplitPicker = false
+    /// Bumped while an exited tab is counting down, so the strip redraws.
+    var graceTick = 0
     var showSidebar = true {
         didSet { store(showSidebar, forKey: Self.showSidebarKey) }
     }
@@ -272,7 +276,7 @@ final class AppModel {
         }
     }
 
-    @ObservationIgnored private var client: FleetClient?
+    @ObservationIgnored var client: FleetClient?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var gitTask: Task<Void, Never>?
     @ObservationIgnored private var contextRefreshTask: Task<Void, Never>?
@@ -295,6 +299,19 @@ final class AppModel {
     @ObservationIgnored private let plugin = PluginServer(token: PluginServer.newToken())
     @ObservationIgnored private var sessionListRefresh: Task<Void, Never>?
     @ObservationIgnored private var sessionListRefreshAgain = false
+    @ObservationIgnored var suppressWorkspacePersistence = false
+    @ObservationIgnored private var suppressWorkspaceSideEffects = false
+    @ObservationIgnored var workspaceGeneration = 0
+    @ObservationIgnored var ackedWorkspaceGeneration = 0
+    @ObservationIgnored var workspaceWriteTask: Task<Void, Never>?
+    @ObservationIgnored var exitDeadlines: [String: Date] = [:]
+    @ObservationIgnored var graceTask: Task<Void, Never>?
+    @ObservationIgnored var dragWatch: Task<Void, Never>?
+    @ObservationIgnored var keyMonitor: Any?
+    @ObservationIgnored var lastFocusedSessionID: String?
+    @ObservationIgnored var keptTabIDs: Set<String> = [] {
+        didSet { storeKeptTabs() }
+    }
 
     private static let socketKey = "fleet.socketPath"
     private static let autoStartKey = "fleet.autoStartDaemon"
@@ -313,6 +330,8 @@ final class AppModel {
     private static let confirmStopKey = "fleet.confirmStop"
     private static let pinnedDirectoryKey = "fleet.pinnedWorkingDirectory"
     private static let panelScratchKey = "fleet.panelScratchID"
+    static let keptTabsKey = "fleet.keptWorkspaceTabs"
+    static let exitGrace: TimeInterval = 30
 
     init() {
         let defaults = UserDefaults.standard
@@ -332,16 +351,20 @@ final class AppModel {
         if let raw = defaults.string(forKey: Self.defaultSplitKey),
            let layout = SplitLayout(rawValue: raw) {
             defaultSplitLayout = layout
-            splitLayout = layout
         }
         confirmStop = defaults.object(forKey: Self.confirmStopKey) as? Bool ?? true
         pinnedWorkingDirectory = defaults.string(forKey: Self.pinnedDirectoryKey) ?? ""
         if let stored = defaults.string(forKey: Self.panelScratchKey), !stored.isEmpty {
             panelScratchID = stored
         }
+        if let kept = defaults.stringArray(forKey: Self.keptTabsKey) {
+            keptTabIDs = Set(kept)
+        }
         if isPreview {
             loadPreview()
         }
+        installKeyMonitor()
+        startGraceLoop()
     }
 
     /// Preview must not replace the names and layout saved for real sessions.
@@ -363,8 +386,6 @@ final class AppModel {
         panelScratchID = nil
         showSidebar = true
         showContext = true
-        isSplit = false
-        splitLayout = .stacked
         filter = .all
         contextShowsTerminal = false
         paintedPreviewIDs = Set(fixture.sessions.map(\.id))
@@ -372,9 +393,17 @@ final class AppModel {
         sessionNames = fixture.names
         activeSessionIDs = fixture.activeIDs
         attentionSessionIDs = fixture.attentionIDs
-        primarySessionID = fixture.focusID
-        secondarySessionID = nil
-        focusedPane = .primary
+        workspace = Workspace(
+            split: nil,
+            panes: [
+                WorkspacePane(
+                    id: "preview-pane",
+                    tabs: [WorkspaceTab(id: "preview-tab", sessionID: fixture.focusID)],
+                    activeTabID: "preview-tab"
+                ),
+            ],
+            focusedPaneID: "preview-pane"
+        )
     }
 
     private static func loadTerminal(from defaults: UserDefaults) -> TerminalPreferences {
@@ -418,11 +447,23 @@ final class AppModel {
     // MARK: - Derived state
 
     var focusedSession: SessionInfo? {
-        session(for: focusedPane) ?? session(for: .primary)
+        if let session = session(in: workspace.focusedPaneID) {
+            return session
+        }
+        for pane in workspace.panes where pane.id != workspace.focusedPaneID {
+            if let session = session(in: pane.id) {
+                return session
+            }
+        }
+        if let lastFocusedSessionID, let session = session(id: lastFocusedSessionID) {
+            return session
+        }
+        return nil
     }
 
-    var primarySession: SessionInfo? { session(for: .primary) }
-    var secondarySession: SessionInfo? { session(for: .secondary) }
+    var preferredSplitAxis: SplitAxis {
+        defaultSplitLayout == .sideBySide ? .horizontal : .vertical
+    }
 
     var filteredSessions: [SessionInfo] {
         sessions.filter { $0.id != panelScratchID && matches($0, filter: filter) }
@@ -471,7 +512,7 @@ final class AppModel {
         Task { try? await client.reportPresence(report) }
     }
 
-    private var daemonCapabilities: [String] {
+    var daemonCapabilities: [String] {
         guard case .connected(let welcome) = connection else { return [] }
         return welcome.capabilities
     }
@@ -526,14 +567,12 @@ final class AppModel {
 
     var daemonExecutable: String? { DaemonLauncher.locate() }
 
-    func session(for slot: PaneSlot) -> SessionInfo? {
-        let id: String?
-        switch slot {
-        case .primary: id = primarySessionID
-        case .secondary: id = isSplit ? secondarySessionID : nil
-        }
-        guard let id else { return nil }
-        return sessions.first(where: { $0.id == id })
+    func session(in paneID: String) -> SessionInfo? {
+        guard let pane = workspace.panes.first(where: { $0.id == paneID }),
+              let tabID = pane.activeTabID,
+              let tab = pane.tabs.first(where: { $0.id == tabID })
+        else { return nil }
+        return session(id: tab.sessionID)
     }
 
     func session(id: String) -> SessionInfo? {
@@ -584,12 +623,6 @@ final class AppModel {
         case .exited(let exit):
             return exit.success ? "done" : "exit \(exit.code)"
         }
-    }
-
-    func paneSlot(for sessionID: String) -> PaneSlot? {
-        if primarySessionID == sessionID { return .primary }
-        if isSplit, secondarySessionID == sessionID { return .secondary }
-        return nil
     }
 
     func abbreviate(_ path: String) -> String {
@@ -647,7 +680,8 @@ final class AppModel {
             startPlugin(client)
             startEventLoop(client)
             try await reloadSessions()
-            await attachVisiblePanes()
+            await loadWorkspace()
+            await syncOpenAttachments()
             startGitLoop()
         } catch {
             await client.disconnect()
@@ -660,8 +694,14 @@ final class AppModel {
         teardownConnection()
         connection = .idle
         sessions = []
-        primarySessionID = nil
-        secondarySessionID = nil
+        suppressWorkspaceSideEffects = true
+        workspace = .empty
+        suppressWorkspaceSideEffects = false
+        persistsWorkspace = false
+        workspaceGeneration = 0
+        ackedWorkspaceGeneration = 0
+        workspaceWriteTask?.cancel()
+        workspaceWriteTask = nil
         attachedSessionIDs.removeAll()
         attachingSessionIDs.removeAll()
         for controller in controllers.values {
@@ -762,6 +802,8 @@ final class AppModel {
             connection = .failed(AgentNotices.daemonShuttingDown())
         case .sessionsChanged:
             scheduleSessionReload()
+        case .workspaceChanged(let workspace):
+            applyRemoteWorkspace(workspace)
         }
     }
 
@@ -865,32 +907,7 @@ final class AppModel {
         inputMutedSessionIDs.subtract(sessions.filter(\.isRunning).map(\.id))
         activeSessionIDs.formIntersection(ids)
         attentionSessionIDs.formIntersection(ids)
-        reconcilePanes()
-    }
-
-    private func reconcilePanes() {
-        let ids = Set(sessions.map(\.id))
-
-        if let primarySessionID, !ids.contains(primarySessionID) {
-            self.primarySessionID = nil
-        }
-        if let secondarySessionID, !ids.contains(secondarySessionID) {
-            self.secondarySessionID = nil
-        }
-        if primarySessionID == secondarySessionID {
-            secondarySessionID = nil
-        }
-
-        if primarySessionID == nil {
-            primarySessionID = sessions.first(where: \.isRunning)?.id ?? sessions.first?.id
-        }
-        if isSplit, secondarySessionID == nil {
-            secondarySessionID = sessions.first(where: {
-                $0.id != primarySessionID && $0.isRunning
-            })?.id ?? sessions.first(where: {
-                $0.id != primarySessionID
-            })?.id
-        }
+        editWorkspace(.prune(keeping: ids))
     }
 
     private func pruneSessionNames(keeping ids: Set<String>) {
@@ -907,13 +924,7 @@ final class AppModel {
 
     func selectSession(_ sessionID: String) {
         guard sessions.contains(where: { $0.id == sessionID }) else { return }
-        primarySessionID = sessionID
-        if secondarySessionID == sessionID {
-            secondarySessionID = nil
-        }
-        focusedPane = .primary
-        isSplit = false
-
+        editWorkspace(.open(sessionID: sessionID))
         Task {
             if !paintsPreview(sessionID) {
                 await attachIfNeeded(sessionID)
@@ -922,44 +933,11 @@ final class AppModel {
         }
     }
 
-    func focusPane(_ slot: PaneSlot) {
-        guard slot == .primary || isSplit else { return }
-        focusedPane = slot
-        if let session = session(for: slot) {
+    func focusPane(_ paneID: String) {
+        editWorkspace(.focusPane(id: paneID))
+        if let session = session(in: paneID) {
             controller(for: session.id).focus()
             Task { await refreshGit(cwd: session.cwd) }
-        }
-    }
-
-    func swapPanes() {
-        guard isSplit else { return }
-        (primarySessionID, secondarySessionID) = (secondarySessionID, primarySessionID)
-        focusedPane = focusedPane == .primary ? .secondary : .primary
-        Task { await attachVisiblePanes() }
-    }
-
-    func toggleSplit() {
-        setSplit(!isSplit)
-    }
-
-    func setSplit(_ value: Bool) {
-        isSplit = value
-        if value {
-            ensureSecondary()
-        }
-        Task { await attachVisiblePanes() }
-    }
-
-    private func ensureSecondary() {
-        if secondarySessionID == nil {
-            secondarySessionID = sessions.first(where: { $0.id != primarySessionID })?.id
-        }
-    }
-
-    func setSplitLayout(_ layout: SplitLayout) {
-        splitLayout = layout
-        if isSplit {
-            showContext = layout == .stacked
         }
     }
 
@@ -1017,7 +995,7 @@ final class AppModel {
                 )
             }
             try? await reloadSessions()
-            await attachVisiblePanes()
+            await syncOpenAttachments()
         }
     }
 
@@ -1098,11 +1076,11 @@ final class AppModel {
 
         if !removedIDs.isEmpty {
             sessions.removeAll { removedIDs.contains($0.id) }
-            reconcilePanes()
+            editWorkspace(.prune(keeping: Set(sessions.map(\.id))))
         }
 
         try? await reloadSessions()
-        await attachVisiblePanes()
+        await syncOpenAttachments()
 
         for id in removedIDs {
             attachedSessionIDs.remove(id)
@@ -1180,13 +1158,7 @@ final class AppModel {
         }
         sessions.append(session)
         sessions.sort(by: sessionSort)
-
-        primarySessionID = session.id
-        if secondarySessionID == session.id {
-            secondarySessionID = nil
-        }
-        focusedPane = .primary
-        isSplit = false
+        editWorkspace(.open(sessionID: session.id))
 
         UserDefaults.standard.set(cwd, forKey: "fleet.lastWorkingDirectory")
         await attachIfNeeded(session.id)
@@ -1248,12 +1220,9 @@ final class AppModel {
             guard let self else { return }
             // The panel shell takes the keyboard without becoming the middle pane.
             if sessionID == self.panelScratchID { return }
-            let slot: PaneSlot = (self.isSplit && self.secondarySessionID == sessionID)
-                ? .secondary
-                : .primary
-            if self.focusedPane != slot {
-                self.focusedPane = slot
-                Task { await self.refreshGitForFocusedSession() }
+            if let paneID = self.workspace.paneID(forSession: sessionID),
+               self.workspace.focusedPaneID != paneID {
+                self.focusPane(paneID)
             }
         }
         controller.onPresence = { [weak self, weak controller] in
@@ -1273,12 +1242,16 @@ final class AppModel {
         controllers[sessionID]
     }
 
-    private func attachVisiblePanes() async {
-        for slot in [PaneSlot.primary, .secondary] {
-            if slot == .secondary, !isSplit { continue }
-            if let id = session(for: slot)?.id {
-                await attachIfNeeded(id)
-            }
+    func syncOpenAttachments() async {
+        let open = Set(workspace.panes.flatMap { $0.tabs.map(\.sessionID) })
+        for id in open where !paintsPreview(id) {
+            await attachIfNeeded(id)
+        }
+        guard let client else { return }
+        let stale = attachedSessionIDs.subtracting(open).filter { $0 != panelScratchID }
+        for id in stale {
+            try? await client.detachSession(id: id)
+            attachedSessionIDs.remove(id)
         }
     }
 
@@ -1444,7 +1417,7 @@ final class AppModel {
         Task { await refreshGitForFocusedSession() }
     }
 
-    private func refreshGitForFocusedSession() async {
+    func refreshGitForFocusedSession() async {
         guard let cwd = focusedSession?.cwd else { return }
         await refreshGit(cwd: cwd)
     }

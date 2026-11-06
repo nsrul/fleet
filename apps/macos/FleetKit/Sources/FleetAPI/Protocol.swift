@@ -12,6 +12,8 @@ public enum FleetProtocol {
     public static let maxSocketPathBytes = 100
     /// Welcome capability for task, plan, and presence commands.
     public static let tasksCapability = "tasks"
+    /// Welcome capability for the daemon-owned tab layout.
+    public static let workspaceCapability = "workspace"
 }
 
 public struct TerminalSize: Codable, Equatable, Sendable {
@@ -132,6 +134,8 @@ public enum Command: Encodable, Sendable {
     case listTasks(parentID: String?)
     case putPlan(PutPlan)
     case getPlan(id: String)
+    case getWorkspace
+    case putWorkspace(Workspace)
 
     private enum CodingKeys: String, CodingKey {
         case command
@@ -193,8 +197,17 @@ public enum Command: Encodable, Sendable {
         case .getPlan(let id):
             try container.encode("get_plan", forKey: .command)
             try container.encode(SessionID(id: id), forKey: .params)
+        case .getWorkspace:
+            try container.encode("get_workspace", forKey: .command)
+        case .putWorkspace(let workspace):
+            try container.encode("put_workspace", forKey: .command)
+            try container.encode(PutWorkspaceParams(workspace: workspace), forKey: .params)
         }
     }
+}
+
+private struct PutWorkspaceParams: Encodable {
+    let workspace: Workspace
 }
 
 private struct ListTasksParams: Encodable {
@@ -587,6 +600,7 @@ public enum ResponseData: Sendable {
     case acknowledged
     case tasks([TaskInfo])
     case plan(PlanInfo)
+    case workspace(Workspace)
 }
 
 extension ResponseData: Decodable {
@@ -613,6 +627,8 @@ extension ResponseData: Decodable {
             self = .tasks(try container.decode([TaskInfo].self, forKey: .value))
         case "plan":
             self = .plan(try container.decode(PlanInfo.self, forKey: .value))
+        case "workspace":
+            self = .workspace(try container.decode(Workspace.self, forKey: .value))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .kind,
@@ -667,6 +683,7 @@ public enum Event: Decodable, Sendable {
     case status(sessionID: String, status: SessionStatus)
     case daemonStopping
     case sessionsChanged
+    case workspaceChanged(Workspace)
 
     private enum CodingKeys: String, CodingKey {
         case event
@@ -674,6 +691,7 @@ public enum Event: Decodable, Sendable {
         case seq
         case data
         case status
+        case workspace
     }
 
     public init(from decoder: Decoder) throws {
@@ -695,6 +713,8 @@ public enum Event: Decodable, Sendable {
             self = .daemonStopping
         case "sessions_changed":
             self = .sessionsChanged
+        case "workspace_changed":
+            self = .workspaceChanged(try container.decode(Workspace.self, forKey: .workspace))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .event,

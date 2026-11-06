@@ -41,10 +41,16 @@ async fn run() -> Result<()> {
     #[cfg(unix)]
     {
         let config = config::Config::load()?;
+        let workspace_path = config
+            .socket_path
+            .parent()
+            .context("the socket path includes a parent directory")?
+            .join("workspace.json");
         let mut api = api::ApiServer::bind(
             &config.socket_path,
             config.private_parent,
             Arc::clone(&engine),
+            &workspace_path,
         )
         .await?;
         info!(
