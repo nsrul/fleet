@@ -34,6 +34,9 @@ struct RootView: View {
         .sheet(isPresented: $model.showNewAgent) {
             NewAgentSheet(model: model)
         }
+        .sheet(isPresented: $model.showSplitPicker) {
+            SplitPickerSheet(model: model)
+        }
         .alert(
             "Stop session?",
             isPresented: Binding(

@@ -312,7 +312,7 @@ struct SidebarView: View {
     }
 
     private func containsAssignedSession(_ group: SessionGroup) -> Bool {
-        group.sessions.contains { model.paneSlot(for: $0.id) != nil }
+        group.sessions.contains { model.workspace.isOpen($0.id) }
     }
 
     private var isSearching: Bool {
@@ -511,8 +511,12 @@ private struct SessionRow: View {
     @State private var isRenaming = false
     @State private var draft = ""
 
-    private var assignedPane: PaneSlot? {
-        model.paneSlot(for: session.id)
+    private var isOpen: Bool {
+        model.workspace.isOpen(session.id)
+    }
+
+    private var isActiveTab: Bool {
+        model.workspace.isActiveTab(session.id)
     }
 
     private var background: Color {
@@ -522,10 +526,10 @@ private struct SessionRow: View {
         if isSelected {
             return Palette.accent.opacity(0.12)
         }
-        if assignedPane != nil {
+        if isActiveTab {
             return Palette.sidebarSelection
         }
-        if isHovered {
+        if isOpen || isHovered {
             return Palette.sidebarHover
         }
         return .clear
@@ -557,17 +561,11 @@ private struct SessionRow: View {
 
                         Spacer(minLength: 8)
 
-                        if let assignedPane, !isHovered {
-                            Text("\(assignedPane.number)")
-                                .font(.system(size: 9, weight: .bold, design: .rounded))
-                                .foregroundStyle(
-                                    assignedPane == model.focusedPane ? Palette.accent : Color.secondary
-                                )
-                                .frame(width: 16, height: 14)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                        .fill(Color.primary.opacity(0.06))
-                                )
+                        if isActiveTab, !isHovered {
+                            Circle()
+                                .fill(Palette.accent)
+                                .frame(width: 6, height: 6)
+                                .accessibilityLabel("Active tab")
                         }
                     }
                     .padding(.leading, SidebarList.rowIconLeading)
@@ -622,6 +620,12 @@ private struct SessionRow: View {
                 model.forkSession(session.id)
             }
 
+            if model.workspace.panes.count == 2 {
+                Button("Open in Other Pane") {
+                    model.openInOtherPane(session.id)
+                }
+            }
+
             Button("Copy Session ID") {
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
@@ -658,7 +662,7 @@ private struct SessionRow: View {
 }
 
 /// A borderless field that edits a session name in the row and selects the text.
-private struct InlineNameField: NSViewRepresentable {
+struct InlineNameField: NSViewRepresentable {
     @Binding var text: String
     var onCommit: (String) -> Void
     var onCancel: () -> Void

@@ -4,9 +4,10 @@ mod codec;
 mod listener;
 mod outbound;
 mod tasks;
+mod workspace;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::Path,
     sync::{
         Arc,
@@ -26,9 +27,9 @@ use fleet_protocol::{
     DaemonState, PROTOCOL_VERSION,
     api::{
         ApiError, AttachedSession, Base64Bytes, CAPABILITY_REMOVE_SESSION, CAPABILITY_TASKS,
-        ClientMessage, Command, CreateSession, ErrorCode, Event, PlanStepSpec, PutPlan,
-        ReportPresence, ResponseData, ResponseResult, ServerMessage, SessionExit, SessionInfo,
-        SessionStatus, TerminalSize,
+        CAPABILITY_WORKSPACE, ClientMessage, Command, CreateSession, ErrorCode, Event,
+        PlanStepSpec, PutPlan, ReportPresence, ResponseData, ResponseResult, ServerMessage,
+        SessionExit, SessionInfo, SessionStatus, TerminalSize,
     },
 };
 use tokio::{
@@ -40,7 +41,10 @@ use tokio::{
 };
 use tracing::{debug, warn};
 
-use self::{codec::FrameError, listener::LocalListener, outbound::Outbound, tasks::TaskBook};
+use self::{
+    codec::FrameError, listener::LocalListener, outbound::Outbound, tasks::TaskBook,
+    workspace::WorkspaceBook,
+};
 
 const MAX_CLIENTS: usize = 32;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -61,6 +65,7 @@ struct ApiState {
     engine: Arc<Mutex<Engine>>,
     shutdown: watch::Sender<bool>,
     tasks: TaskBook,
+    workspace: WorkspaceBook,
 }
 
 impl ApiServer {
@@ -68,15 +73,19 @@ impl ApiServer {
         path: &Path,
         private_parent: bool,
         engine: Arc<Mutex<Engine>>,
+        workspace_path: &Path,
     ) -> Result<Self> {
         let listener = LocalListener::bind(path, private_parent).await?;
         let (shutdown, _) = watch::channel(false);
+        // Sessions do not survive a daemon restart, so tabs for them are dropped.
+        let workspace = WorkspaceBook::open(workspace_path.to_path_buf(), &HashSet::new());
         Ok(Self {
             listener,
             state: Arc::new(ApiState {
                 engine,
                 shutdown: shutdown.clone(),
                 tasks: TaskBook::new(),
+                workspace,
             }),
             clients: Arc::new(Semaphore::new(MAX_CLIENTS)),
             connections: JoinSet::new(),
@@ -216,6 +225,7 @@ async fn handle_connection(
         closed,
         shutdown,
         sessions: state.tasks.subscribe(),
+        workspace: state.workspace.subscribe(),
         state,
         attachments: HashMap::new(),
         writer: Some(writer),
@@ -231,6 +241,7 @@ struct Connection {
     closed: watch::Receiver<bool>,
     shutdown: watch::Receiver<bool>,
     sessions: watch::Receiver<u64>,
+    workspace: watch::Receiver<u64>,
     state: Arc<ApiState>,
     attachments: HashMap<SessionId, JoinHandle<()>>,
     writer: Option<JoinHandle<()>>,
@@ -303,6 +314,7 @@ impl Connection {
                     capabilities: vec![
                         CAPABILITY_REMOVE_SESSION.to_owned(),
                         CAPABILITY_TASKS.to_owned(),
+                        CAPABILITY_WORKSPACE.to_owned(),
                     ],
                 })?;
                 debug!(
@@ -326,6 +338,7 @@ impl Connection {
                 Shutdown,
                 Closed,
                 Sessions,
+                Workspace,
             }
 
             let next = tokio::select! {
@@ -335,6 +348,7 @@ impl Connection {
                 _ = wait_until_set(&mut self.shutdown) => Next::Shutdown,
                 _ = wait_until_set(&mut self.closed) => Next::Closed,
                 _ = self.sessions.changed() => Next::Sessions,
+                _ = self.workspace.changed() => Next::Workspace,
             };
 
             match next {
@@ -354,6 +368,12 @@ impl Connection {
                 Next::Sessions => {
                     self.send(ServerMessage::Event {
                         event: Event::SessionsChanged,
+                    })?;
+                }
+                Next::Workspace => {
+                    let workspace = self.state.workspace.get();
+                    self.send(ServerMessage::Event {
+                        event: Event::WorkspaceChanged { workspace },
                     })?;
                 }
             }
@@ -599,6 +619,7 @@ async fn execute(
             engine.remove_session(&id).map_err(map_engine_error)?;
             drop(engine);
             state.tasks.forget(id.as_str()).await;
+            state.workspace.forget(id.as_str());
             state.tasks.bump().await;
             Ok(ResponseData::Acknowledged)
         }
@@ -637,6 +658,34 @@ async fn execute(
             Ok(ResponseData::Plan(plan))
         }
         Command::GetPlan { id } => Ok(ResponseData::Plan(state.tasks.get(&id).await?)),
+        Command::GetWorkspace => {
+            let engine = state.engine.lock().await;
+            if engine.state() == EngineState::Stopped {
+                return Err(ApiError::new(
+                    ErrorCode::EngineStopped,
+                    "the engine is stopped",
+                ));
+            }
+            drop(engine);
+            Ok(ResponseData::Workspace(state.workspace.get()))
+        }
+        Command::PutWorkspace { workspace } => {
+            let engine = state.engine.lock().await;
+            if engine.state() == EngineState::Stopped {
+                return Err(ApiError::new(
+                    ErrorCode::EngineStopped,
+                    "the engine is stopped",
+                ));
+            }
+            let live = engine
+                .sessions()
+                .iter()
+                .map(|info| info.id.to_string())
+                .collect();
+            drop(engine);
+            let stored = state.workspace.put(workspace, &live)?;
+            Ok(ResponseData::Workspace(stored))
+        }
         Command::Input { id, data } => {
             if data.len() > fleet_protocol::api::MAX_INPUT_BYTES {
                 return Err(ApiError::invalid_request(format!(

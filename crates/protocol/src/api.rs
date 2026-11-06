@@ -24,6 +24,9 @@ pub const CAPABILITY_REMOVE_SESSION: &str = "remove_session";
 /// Task links, plans, and sidebar presence. Absent on a daemon that predates them.
 pub const CAPABILITY_TASKS: &str = "tasks";
 
+/// Daemon-owned tab and split layout. Absent on a daemon that predates it.
+pub const CAPABILITY_WORKSPACE: &str = "workspace";
+
 /// Opaque bytes encoded as a base64 string on the wire.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Base64Bytes(Vec<u8>);
@@ -232,6 +235,54 @@ pub fn sidebar_class(status: &SessionStatus, active: bool, needs_attention: bool
     SidebarClass::Idle
 }
 
+/// Side-by-side panes, or panes stacked on top of each other.
+///
+/// `Horizontal` places panes in a row. `Vertical` places them in a column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SplitAxis {
+    Horizontal,
+    Vertical,
+}
+
+/// One open session inside a pane. A session appears in at most one tab.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceTab {
+    pub id: String,
+    pub session_id: String,
+}
+
+/// Tabs owned by one pane. A pane always has at least one tab once stored.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspacePane {
+    pub id: String,
+    pub tabs: Vec<WorkspaceTab>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_tab_id: Option<String>,
+}
+
+/// The arrangement of open sessions. Terminals are not part of this record.
+///
+/// Zero panes means nothing is open. One pane has no split. Two panes name a
+/// [`SplitAxis`]. The daemon rejects any other shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Workspace {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split: Option<SplitAxis>,
+    pub panes: Vec<WorkspacePane>,
+    pub focused_pane_id: String,
+}
+
+impl Workspace {
+    pub fn empty() -> Self {
+        Self {
+            split: None,
+            panes: Vec::new(),
+            focused_pane_id: String::new(),
+        }
+    }
+}
+
 /// A command sent by a client.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "command", content = "params", rename_all = "snake_case")]
@@ -269,6 +320,10 @@ pub enum Command {
     PutPlan(PutPlan),
     GetPlan {
         id: String,
+    },
+    GetWorkspace,
+    PutWorkspace {
+        workspace: Workspace,
     },
 }
 
@@ -341,6 +396,7 @@ pub enum ResponseData {
     Acknowledged,
     Tasks(Vec<TaskInfo>),
     Plan(PlanInfo),
+    Workspace(Workspace),
 }
 
 /// A request outcome.
@@ -378,6 +434,8 @@ pub enum ErrorCode {
     EngineStopped,
     SlowClient,
     Internal,
+    InvalidWorkspace,
+    DuplicateWorkspaceTab,
 }
 
 /// A clear error returned to a client.
@@ -423,6 +481,9 @@ pub enum Event {
     },
     DaemonStopping,
     SessionsChanged,
+    WorkspaceChanged {
+        workspace: Workspace,
+    },
 }
 
 /// A message sent from the daemon to a client.
@@ -455,7 +516,8 @@ mod tests {
     use super::{
         Base64Bytes, CAPABILITY_REMOVE_SESSION, ClientMessage, Command, CreateSession, ErrorCode,
         Event, ResponseData, ResponseResult, ServerMessage, SessionExit, SessionInfo,
-        SessionStatus, SidebarClass, TerminalSize, sidebar_class,
+        SessionStatus, SidebarClass, SplitAxis, TerminalSize, Workspace, WorkspacePane,
+        WorkspaceTab, sidebar_class,
     };
     use crate::{DaemonState, PROTOCOL_VERSION};
 
@@ -637,6 +699,65 @@ mod tests {
         assert_eq!(sidebar_class(&running, true, true), SidebarClass::NeedsYou);
         assert_eq!(sidebar_class(&ok, false, false), SidebarClass::Idle);
         assert_eq!(sidebar_class(&failed, false, false), SidebarClass::NeedsYou);
+    }
+
+    #[test]
+    fn workspace_messages_round_trip() {
+        let workspace = Workspace {
+            split: Some(SplitAxis::Horizontal),
+            panes: vec![
+                WorkspacePane {
+                    id: "pane-a".into(),
+                    tabs: vec![WorkspaceTab {
+                        id: "tab-a".into(),
+                        session_id: "one".into(),
+                    }],
+                    active_tab_id: Some("tab-a".into()),
+                },
+                WorkspacePane {
+                    id: "pane-b".into(),
+                    tabs: vec![WorkspaceTab {
+                        id: "tab-b".into(),
+                        session_id: "two".into(),
+                    }],
+                    active_tab_id: Some("tab-b".into()),
+                },
+            ],
+            focused_pane_id: "pane-b".into(),
+        };
+        let command = Command::PutWorkspace {
+            workspace: workspace.clone(),
+        };
+        let encoded = serde_json::to_value(&command).unwrap();
+        assert_eq!(encoded["command"], "put_workspace");
+        assert_eq!(encoded["params"]["workspace"]["split"], "horizontal");
+        assert_eq!(encoded["params"]["workspace"]["focused_pane_id"], "pane-b");
+        assert_eq!(serde_json::from_value::<Command>(encoded).unwrap(), command);
+        assert_eq!(
+            serde_json::to_value(Command::GetWorkspace).unwrap(),
+            json!({"command": "get_workspace"})
+        );
+
+        let event = Event::WorkspaceChanged {
+            workspace: workspace.clone(),
+        };
+        let encoded = serde_json::to_value(&event).unwrap();
+        assert_eq!(encoded["event"], "workspace_changed");
+        assert_eq!(serde_json::from_value::<Event>(encoded).unwrap(), event);
+
+        let response = ResponseData::Workspace(Workspace::empty());
+        assert_eq!(
+            serde_json::to_value(&response).unwrap(),
+            json!({"kind": "workspace", "value": {"panes": [], "focused_pane_id": ""}})
+        );
+        assert_eq!(
+            serde_json::to_value(ErrorCode::InvalidWorkspace).unwrap(),
+            json!("invalid_workspace")
+        );
+        assert_eq!(
+            serde_json::to_value(ErrorCode::DuplicateWorkspaceTab).unwrap(),
+            json!("duplicate_workspace_tab")
+        );
     }
 
     #[test]

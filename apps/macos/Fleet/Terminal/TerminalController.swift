@@ -27,6 +27,12 @@ final class FleetTerminalView: TerminalView {
         layer?.borderColor = Palette.accentNS.cgColor
     }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // The split preview lives over this view. Step aside so a tab drop can land.
+        if TabDragSession.active { return nil }
+        return super.hitTest(point)
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         onFocus?()

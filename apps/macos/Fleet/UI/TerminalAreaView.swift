@@ -57,12 +57,7 @@ struct TerminalAreaView: View {
     }
 
     private var panes: some View {
-        TerminalPaneView(
-            model: model,
-            slot: .primary,
-            showsSidebarToggle: true,
-            showsContextToggle: true
-        )
+        WorkspaceSplit(model: model)
     }
 }
 

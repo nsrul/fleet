@@ -304,7 +304,7 @@ struct WorkspaceSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             VStack(alignment: .leading, spacing: 8) {
-                SettingsLabel(text: "Open split")
+                SettingsLabel(text: "Keyboard split")
                 HStack(spacing: 8) {
                     splitButton(.stacked, symbol: "rectangle.split.1x2", title: "Stacked")
                     splitButton(.sideBySide, symbol: "rectangle.split.2x1", title: "Side by side")
