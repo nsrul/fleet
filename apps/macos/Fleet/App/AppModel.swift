@@ -1383,20 +1383,21 @@ final class AppModel {
         pinnedWorkingDirectory = url.path
     }
 
-    func setSocketPath(_ path: String) {
-        let expanded = NSString(string: path).expandingTildeInPath
-        guard !expanded.isEmpty else { return }
+    @discardableResult
+    func setSocketPath(_ path: String) -> Bool {
+        guard case .accept(let expanded) = SocketPath.decide(path) else { return false }
         socketPath = expanded
         UserDefaults.standard.set(expanded, forKey: Self.socketKey)
+        return true
     }
 
     func connectUsingPath(_ path: String) async {
-        setSocketPath(path)
+        guard setSocketPath(path) else { return }
         await reconnect()
     }
 
     func startDaemonUsingPath(_ path: String) async {
-        setSocketPath(path)
+        guard setSocketPath(path) else { return }
         await startDaemonManually()
     }
 

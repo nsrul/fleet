@@ -3,7 +3,12 @@ import SwiftUI
 
 struct ConnectionView: View {
     @Bindable var model: AppModel
-    @State private var path = ""
+    @State private var path: String
+
+    init(model: AppModel) {
+        self.model = model
+        _path = State(initialValue: model.socketPath)
+    }
 
     var body: some View {
         ZStack {
@@ -14,9 +19,6 @@ struct ConnectionView: View {
             } else {
                 card
             }
-        }
-        .onAppear {
-            path = model.socketPath
         }
     }
 
@@ -75,9 +77,7 @@ struct ConnectionView: View {
                     .font(Typography.section)
                     .tracking(0.6)
                     .foregroundStyle(.tertiary)
-                TextField("~/.fleet/daemon.sock", text: $path)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11, design: .monospaced))
+                SocketPathEditor(draft: $path)
             }
 
             Toggle("Start the daemon automatically", isOn: $model.autoStartDaemon)
@@ -106,7 +106,7 @@ struct ConnectionView: View {
                     Task { await model.connectUsingPath(path) }
                 }
                 .buttonStyle(PrimaryButtonStyle())
-                .disabled(path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(!SocketPath.canSubmit(path))
                 .keyboardShortcut(.defaultAction)
 
                 if model.daemonExecutable != nil {
@@ -114,7 +114,7 @@ struct ConnectionView: View {
                         Task { await model.startDaemonUsingPath(path) }
                     }
                     .buttonStyle(SecondaryButtonStyle())
-                    .disabled(model.isStartingDaemon)
+                    .disabled(!SocketPath.canSubmit(path) || model.isStartingDaemon)
                 }
 
                 Spacer()
