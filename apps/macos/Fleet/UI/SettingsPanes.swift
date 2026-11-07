@@ -375,8 +375,12 @@ struct WorkspaceSettings: View {
 
 struct DaemonSettings: View {
     @Bindable var model: AppModel
-    @State private var socketPath = ""
-    @State private var didLoad = false
+    @State private var socketPath: String
+
+    init(model: AppModel) {
+        self.model = model
+        _socketPath = State(initialValue: model.socketPath)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -404,9 +408,7 @@ struct DaemonSettings: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 SettingsLabel(text: "Socket")
-                TextField("~/.fleet/daemon.sock", text: $socketPath)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Typography.monoSmall)
+                SocketPathEditor(draft: $socketPath)
             }
 
             Toggle("Start with Fleet", isOn: $model.autoStartDaemon)
@@ -417,14 +419,14 @@ struct DaemonSettings: View {
                     Task { await model.connectUsingPath(socketPath) }
                 }
                 .buttonStyle(PrimaryButtonStyle())
-                .disabled(model.connection.isConnecting)
+                .disabled(!SocketPath.canSubmit(socketPath) || model.connection.isConnecting)
 
                 if model.daemonExecutable != nil {
                     Button("Start daemon") {
                         Task { await model.startDaemonUsingPath(socketPath) }
                     }
                     .buttonStyle(SecondaryButtonStyle())
-                    .disabled(model.isStartingDaemon)
+                    .disabled(!SocketPath.canSubmit(socketPath) || model.isStartingDaemon)
                 }
 
                 Button("Open log") {
@@ -435,11 +437,6 @@ struct DaemonSettings: View {
 
                 Spacer(minLength: 0)
             }
-        }
-        .onAppear {
-            guard !didLoad else { return }
-            socketPath = model.socketPath
-            didLoad = true
         }
     }
 

@@ -33,6 +33,13 @@ swiftc -o "$TMP/codex-socket-tests" \
 "$TMP/codex-socket-tests"
 
 echo
+echo "== Socket path"
+swiftc -o "$TMP/socket-path-tests" \
+  "$APP_DIR/Fleet/Services/SocketPath.swift" \
+  "$APP_DIR/tests/SocketPathTests.swift"
+"$TMP/socket-path-tests"
+
+echo
 echo "== Build fleet-daemon"
 (cd "$ROOT" && cargo build -p fleet-daemon --locked)
 

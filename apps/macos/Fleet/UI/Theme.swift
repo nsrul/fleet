@@ -365,3 +365,22 @@ private struct LiquidGlassPlate: NSViewRepresentable {
         }
     }
 }
+
+/// Socket field shared by Settings and the connection card.
+struct SocketPathEditor: View {
+    @Binding var draft: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TextField("~/.fleet/daemon.sock", text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .font(Typography.monoSmall)
+            if let message = SocketPath.validationMessage(for: draft) {
+                Text(message)
+                    .font(Typography.captionRegular)
+                    .foregroundStyle(Palette.error)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
