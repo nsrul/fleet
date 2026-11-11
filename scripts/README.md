@@ -6,6 +6,7 @@ Run them from anywhere; each resolves the repository root itself.
 | Script | What it does |
 | --- | --- |
 | `scripts/dev.sh` | Builds the daemon and app once, then launches Fleet. |
+| `scripts/watch.sh` | Rebuilds and relaunches Fleet when macOS sources change. |
 | `scripts/build.sh` | Builds `fleet-daemon` and the macOS app. |
 | `scripts/install.sh` | Builds a release from this checkout, quits Fleet, stops `fleet-daemon`, removes older installs, and installs `Fleet.app` and `fleet-daemon`. |
 | `scripts/run.sh` | Builds if needed, starts a daemon when necessary, and opens Fleet. |
@@ -27,6 +28,20 @@ First-time build and run:
 ```sh
 scripts/dev.sh
 ```
+
+Live UI reload while editing the app:
+
+```sh
+scripts/watch.sh
+```
+
+`watch.sh` builds and launches once, then rebuilds and relaunches on every save
+under `apps/macos/Fleet`, `apps/macos/FleetKit`, and `apps/macos/project.yml`.
+It uses `watchexec` when installed (`brew install watchexec`) and otherwise
+falls back to polling every second. The daemon is left running, so sessions and
+their agents stay alive across a reload; only the window is replaced, so pane
+scroll position and selection reset. A failed build leaves the previous app
+running and the watcher keeps going, so fixing the error is enough to reload.
 
 Two live panes with installed agent CLIs:
 
