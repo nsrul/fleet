@@ -88,15 +88,15 @@ final class ClientTests: XCTestCase {
         _ = try await client.connect(clientName: "unit-test")
 
         async let first = takeSessions(client, limit: .seconds(8))
-        XCTAssertTrue(
-            server.waitUntilRequests(1, timeout: 2),
-            "the server saw \(server.requestCount()) requests"
-        )
+        let sawFirst = await server.waitUntilRequests(1, timeout: 2)
+        guard sawFirst else {
+            return XCTFail("the server saw \(server.requestCount()) requests")
+        }
         async let second = takeSessions(client, limit: .seconds(8))
-        XCTAssertTrue(
-            server.waitUntilRequests(2, timeout: 2),
-            "the server saw \(server.requestCount()) requests before the deadline"
-        )
+        let sawSecond = await server.waitUntilRequests(2, timeout: 2)
+        guard sawSecond else {
+            return XCTFail("the server saw \(server.requestCount()) requests before the deadline")
+        }
         let outcomes = await [first, second]
 
         for outcome in outcomes {
@@ -218,7 +218,6 @@ private final class MockServer: @unchecked Sendable {
     private let lock = NSLock()
     private var stopped = false
     private var requestsSeen = 0
-    private var task: Task<Void, Never>?
 
     init(hangAfterRequest: Bool = false, replies: Int = 1, respondAfter: TimeInterval = 0) throws {
         self.hangAfterRequest = hangAfterRequest
@@ -268,9 +267,13 @@ private final class MockServer: @unchecked Sendable {
     }
 
     func start() {
-        task = Task.detached { [weak self] in
+        // A blocking read on the cooperative pool starves the client tasks
+        // that are supposed to write the next request. Use a real thread.
+        let thread = Thread { [weak self] in
             self?.serve()
         }
+        thread.name = "fleet-mock-server"
+        thread.start()
     }
 
     func stop() {
@@ -283,7 +286,6 @@ private final class MockServer: @unchecked Sendable {
         lock.unlock()
         close(listener)
         unlink(path)
-        task?.cancel()
     }
 
     func requestCount() -> Int {
@@ -292,16 +294,13 @@ private final class MockServer: @unchecked Sendable {
         return requestsSeen
     }
 
-    func waitUntilRequests(_ count: Int, timeout: TimeInterval) -> Bool {
+    func waitUntilRequests(_ count: Int, timeout: TimeInterval) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            lock.lock()
-            let seen = requestsSeen
-            lock.unlock()
-            if seen >= count { return true }
-            Thread.sleep(forTimeInterval: 0.01)
+            if requestCount() >= count { return true }
+            try? await Task.sleep(for: .milliseconds(10))
         }
-        return false
+        return requestCount() >= count
     }
 
     private func noteRequest() {
