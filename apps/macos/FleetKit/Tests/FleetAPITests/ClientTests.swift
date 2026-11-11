@@ -82,12 +82,21 @@ final class ClientTests: XCTestCase {
         defer { server.stop() }
         server.start()
 
-        let client = try FleetClient(path: server.path, requestTimeout: .milliseconds(400))
+        // The deadline has to outlast scheduling the second call. On a busy
+        // runner a 400ms timeout closed the socket before that write landed.
+        let client = try FleetClient(path: server.path, requestTimeout: .seconds(4))
         _ = try await client.connect(clientName: "unit-test")
 
-        async let first = takeSessions(client)
-        async let second = takeSessions(client)
-        XCTAssertTrue(server.waitUntilRequests(2, timeout: 2))
+        async let first = takeSessions(client, limit: .seconds(8))
+        XCTAssertTrue(
+            server.waitUntilRequests(1, timeout: 2),
+            "the server saw \(server.requestCount()) requests"
+        )
+        async let second = takeSessions(client, limit: .seconds(8))
+        XCTAssertTrue(
+            server.waitUntilRequests(2, timeout: 2),
+            "the server saw \(server.requestCount()) requests before the deadline"
+        )
         let outcomes = await [first, second]
 
         for outcome in outcomes {
@@ -275,6 +284,12 @@ private final class MockServer: @unchecked Sendable {
         close(listener)
         unlink(path)
         task?.cancel()
+    }
+
+    func requestCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return requestsSeen
     }
 
     func waitUntilRequests(_ count: Int, timeout: TimeInterval) -> Bool {
