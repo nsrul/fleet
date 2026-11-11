@@ -32,4 +32,4 @@ The Mac client is Swift, in `apps/macos/FleetKit` (`FleetAPI`). The socket proto
 - Process ownership and the wire protocol: the Rust crates. Read `ARCHITECTURE.md` first.
 - Frontend decision: `docs/decisions/0001-MACOS-FRONTEND.md`.
 
-Root `scripts/` are the entry points (`dev.sh`, `build.sh`, `test.sh`, `verify.sh`). Their macOS implementations live in `apps/macos/scripts/`.
+Root `scripts/` are the entry points (`dev.sh`, `watch.sh`, `build.sh`, `test.sh`, `verify.sh`). Their macOS implementations live in `apps/macos/scripts/`.

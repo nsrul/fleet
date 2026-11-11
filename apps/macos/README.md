@@ -56,6 +56,10 @@ is installed, and builds `Fleet.app` into `apps/macos/.build`. `run.sh`
 starts a daemon on `~/.fleet/daemon.sock` if one is not already listening,
 then opens the app.
 
+While editing the interface, `scripts/watch.sh` does the same pair on every
+save and relaunches the app, which is the closest thing to live reload this
+project has. See [`scripts/README.md`](../../scripts/README.md).
+
 To build manually:
 
 ```sh

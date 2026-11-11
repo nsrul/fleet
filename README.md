@@ -97,6 +97,7 @@ Root-level scripts cover the common development flows:
 
 ```sh
 scripts/dev.sh      # build and launch Fleet
+scripts/watch.sh    # rebuild and relaunch Fleet when macOS sources change
 scripts/build.sh    # build the daemon and app
 scripts/install.sh  # replace older installs with a release build from this checkout
 scripts/demo.sh     # two live agent panes
