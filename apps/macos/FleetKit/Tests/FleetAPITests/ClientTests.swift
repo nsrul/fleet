@@ -31,6 +31,32 @@ final class ClientTests: XCTestCase {
         await client.disconnect()
     }
 
+    func testRequestTimeoutWhenServerNeverResponds() async throws {
+        let server = try MockServer(hangAfterRequest: true)
+        defer { server.stop() }
+        server.start()
+
+        let client = try FleetClient(path: server.path, requestTimeout: .milliseconds(200))
+        _ = try await client.connect(clientName: "unit-test")
+
+        let started = Date()
+        let timedOut = await firstRequestTimedOut(client)
+        XCTAssertTrue(timedOut, "a request with no response should throw FleetError.timeout")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+
+        guard let error = client.terminalError() as? FleetError, case .timeout = error else {
+            return XCTFail("expected the connection to close with a timeout, got \(String(describing: client.terminalError()))")
+        }
+
+        let followUp = Date()
+        do {
+            _ = try await client.listSessions()
+            XCTFail("expected the closed socket to reject another request")
+        } catch {
+            XCTAssertLessThan(Date().timeIntervalSince(followUp), 1)
+        }
+    }
+
     func testConnectionFailureIsReported() throws {
         let path = "/tmp/fleet-missing-\(UUID().uuidString.prefix(8)).sock"
         XCTAssertThrowsError(try FleetClient(path: path)) { error in
@@ -41,14 +67,39 @@ final class ClientTests: XCTestCase {
     }
 }
 
+/// True when `listSessions` failed with `FleetError.timeout` before the outer deadline.
+private func firstRequestTimedOut(_ client: FleetClient) async -> Bool {
+    await withTaskGroup(of: Bool.self) { group in
+        group.addTask {
+            do {
+                _ = try await client.listSessions()
+                return false
+            } catch FleetError.timeout {
+                return true
+            } catch {
+                return false
+            }
+        }
+        group.addTask {
+            try? await Task.sleep(for: .seconds(5))
+            return false
+        }
+        let matched = await group.next() ?? false
+        group.cancelAll()
+        return matched
+    }
+}
+
 private final class MockServer: @unchecked Sendable {
     let path: String
+    private let hangAfterRequest: Bool
     private let listener: Int32
     private let lock = NSLock()
     private var stopped = false
     private var task: Task<Void, Never>?
 
-    init() throws {
+    init(hangAfterRequest: Bool = false) throws {
+        self.hangAfterRequest = hangAfterRequest
         path = "/tmp/fleet-test-\(UUID().uuidString.prefix(8)).sock"
         listener = socket(AF_UNIX, SOCK_STREAM, 0)
         guard listener >= 0 else {
@@ -155,6 +206,12 @@ private final class MockServer: @unchecked Sendable {
                 guard let request = request as? [String: Any],
                       request["type"] as? String == "request" else {
                     throw MockError.socket("expected a request frame")
+                }
+                if hangAfterRequest {
+                    while !isStopped {
+                        Thread.sleep(forTimeInterval: 0.05)
+                    }
+                    return
                 }
                 try writeFrame(client, [
                     "type": "response",
