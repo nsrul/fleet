@@ -16,24 +16,39 @@ public enum ClientEvent: Sendable {
 /// performs blocking socket reads on a detached task so the actor stays
 /// responsive.
 public actor FleetClient {
+    /// How long a request waits for a response before the connection is dropped.
+    /// Stop waits at most a few seconds; this leaves room for a slow spawn.
+    public static let defaultRequestTimeout: Duration = .seconds(10)
+
     private let socket: UnixSocket
+    private let requestTimeout: Duration
     private let eventContinuation: AsyncStream<ClientEvent>.Continuation
     public nonisolated let events: AsyncStream<ClientEvent>
+    /// Set when `fail` closes the socket. Nonisolated so the UI can read it
+    /// after the event stream ends without hopping back onto this actor.
+    nonisolated private let terminalFailure = TerminalFailure()
 
     private var nextRequestID: UInt64 = 1
     private var pending: [UInt64: CheckedContinuation<ResponseData, Error>] = [:]
+    private var deadlines: [UInt64: Task<Void, Never>] = [:]
     private var readTask: Task<Void, Never>?
     private var closed = false
 
-    public init(path: String) throws {
+    public init(path: String, requestTimeout: Duration = FleetClient.defaultRequestTimeout) throws {
         let socket = try UnixSocket.connect(path: path)
         var continuation: AsyncStream<ClientEvent>.Continuation!
         let stream = AsyncStream<ClientEvent>(bufferingPolicy: .unbounded) {
             continuation = $0
         }
         self.socket = socket
+        self.requestTimeout = requestTimeout
         self.events = stream
         self.eventContinuation = continuation
+    }
+
+    /// Why the socket was closed, once `fail` has run. Nil while the connection is open.
+    public nonisolated func terminalError() -> Error? {
+        terminalFailure.current()
     }
 
     /// Performs the hello handshake and starts streaming events.
@@ -212,8 +227,28 @@ public actor FleetClient {
             } catch {
                 pending.removeValue(forKey: requestID)
                 continuation.resume(throwing: error)
+                return
+            }
+
+            let timeout = requestTimeout
+            deadlines[requestID] = Task { [weak self] in
+                try? await Task.sleep(for: timeout)
+                guard !Task.isCancelled else { return }
+                await self?.expire(requestID)
             }
         }
+    }
+
+    /// A response that never arrives leaves the read loop blocked. Drop the
+    /// socket so every waiter unblocks and the UI can reconnect.
+    private func expire(_ requestID: UInt64) {
+        guard !closed, pending[requestID] != nil else { return }
+        fail(FleetError.timeout("waiting for a response"))
+    }
+
+    private func takePending(_ requestID: UInt64) -> CheckedContinuation<ResponseData, Error>? {
+        deadlines.removeValue(forKey: requestID)?.cancel()
+        return pending.removeValue(forKey: requestID)
     }
 
     private func startReadLoop() {
@@ -239,7 +274,7 @@ public actor FleetClient {
         case .rejected(let error):
             fail(FleetError.rejected(error))
         case .response(let requestID, let result):
-            guard let continuation = pending.removeValue(forKey: requestID) else {
+            guard let continuation = takePending(requestID) else {
                 return
             }
             switch result {
@@ -267,9 +302,15 @@ public actor FleetClient {
     private func fail(_ error: Error) {
         guard !closed else { return }
         closed = true
+        terminalFailure.record(error)
         socket.close()
         readTask?.cancel()
         readTask = nil
+
+        for task in deadlines.values {
+            task.cancel()
+        }
+        deadlines.removeAll()
 
         let continuations = pending.values
         pending.removeAll()
@@ -277,5 +318,24 @@ public actor FleetClient {
             continuation.resume(throwing: error)
         }
         eventContinuation.finish()
+    }
+}
+
+/// The error that closed the socket. Guarded so the UI can read it after the
+/// event stream ends without awaiting the client actor.
+private final class TerminalFailure: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Error?
+
+    func record(_ error: Error) {
+        lock.lock()
+        if value == nil { value = error }
+        lock.unlock()
+    }
+
+    func current() -> Error? {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
     }
 }

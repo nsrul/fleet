@@ -784,6 +784,10 @@ final class AppModel {
         }
         gitTask?.cancel()
         gitTask = nil
+        if let error = client?.terminalError() as? FleetError, case .timeout = error {
+            connection = .failed(AgentNotices.explainConnection(error, socketPath: socketPath))
+            return
+        }
         connection = .failed(AgentNotices.daemonClosedConnection())
     }
 
