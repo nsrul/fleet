@@ -278,6 +278,10 @@ final class AppModel {
 
     @ObservationIgnored var client: FleetClient?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
+    @ObservationIgnored private var streamRecoveryTask: Task<Void, Never>?
+    @ObservationIgnored private var streamRecoveryPending = false
+    @ObservationIgnored private var streamRecoveryAttempts = 0
+    @ObservationIgnored private var lastStreamRecoveryAt: Date?
     @ObservationIgnored private var gitTask: Task<Void, Never>?
     @ObservationIgnored private var contextRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var scratchCreateTask: Task<Void, Never>?
@@ -332,6 +336,10 @@ final class AppModel {
     private static let panelScratchKey = "fleet.panelScratchID"
     static let keptTabsKey = "fleet.keptWorkspaceTabs"
     static let exitGrace: TimeInterval = 30
+    /// Automatic resynchronization attempts allowed inside ``streamRecoveryWindow``
+    /// before the connection failure is shown instead.
+    static let streamRecoveryLimit = 3
+    static let streamRecoveryWindow: TimeInterval = 30
 
     init() {
         let defaults = UserDefaults.standard
@@ -691,6 +699,10 @@ final class AppModel {
     }
 
     func reconnect() async {
+        streamRecoveryTask?.cancel()
+        streamRecoveryTask = nil
+        streamRecoveryPending = false
+        streamRecoveryAttempts = 0
         teardownConnection()
         connection = .idle
         sessions = []
@@ -727,6 +739,9 @@ final class AppModel {
     }
 
     func shutdown() {
+        streamRecoveryTask?.cancel()
+        streamRecoveryTask = nil
+        streamRecoveryPending = false
         teardownConnection()
     }
 
@@ -784,11 +799,83 @@ final class AppModel {
         }
         gitTask?.cancel()
         gitTask = nil
-        if let error = client?.terminalError() as? FleetError, case .timeout = error {
-            connection = .failed(AgentNotices.explainConnection(error, socketPath: socketPath))
+
+        let error = client?.terminalError()
+        guard isRecoverableStreamEnd(error) else {
+            if let error = error as? FleetError, case .timeout = error {
+                connection = .failed(AgentNotices.explainConnection(error, socketPath: socketPath))
+            } else {
+                connection = .failed(AgentNotices.daemonClosedConnection())
+            }
             return
         }
-        connection = .failed(AgentNotices.daemonClosedConnection())
+        startStreamRecovery(after: error)
+    }
+
+    /// The daemon drops a client that falls behind on output. It sends
+    /// `slow_client` when its queue still has room and simply closes the
+    /// connection when it does not, so an unexpected end is recoverable
+    /// either way: connecting again and attaching again replays a snapshot.
+    /// Protocol and socket-path failures are not, because retrying cannot fix
+    /// them.
+    private func isRecoverableStreamEnd(_ error: Error?) -> Bool {
+        guard let error = error as? FleetError else { return true }
+        switch error {
+        case .timeout, .protocolMismatch, .frameTooLarge, .invalidFrame,
+             .socketPathTooLong, .connectFailed:
+            return false
+        case .socketClosed, .rejected, .api, .unexpectedResponse, .daemonUnavailable:
+            return true
+        }
+    }
+
+    private func startStreamRecovery(after error: Error?) {
+        guard streamRecoveryTask == nil else {
+            // A recovery is already in flight; re-check once it settles in case
+            // the new stream ended during the reconnect.
+            streamRecoveryPending = true
+            return
+        }
+        let now = Date()
+        if let last = lastStreamRecoveryAt,
+           now.timeIntervalSince(last) > Self.streamRecoveryWindow {
+            streamRecoveryAttempts = 0
+        }
+        lastStreamRecoveryAt = now
+        streamRecoveryAttempts += 1
+        guard streamRecoveryAttempts <= Self.streamRecoveryLimit else {
+            // Still losing the stream after several attempts: stop hiding the
+            // problem and show the failure the user can act on.
+            connection = .failed(AgentNotices.daemonClosedConnection())
+            return
+        }
+        let notice = streamRecoveryNotice(for: error)
+        streamRecoveryTask = Task { [weak self] in
+            await self?.recoverStream(notice: notice)
+        }
+    }
+
+    private func streamRecoveryNotice(for error: Error?) -> UserNotice {
+        if let error = error as? FleetError,
+           case .rejected(let apiError) = error,
+           apiError.code == "slow_client" {
+            return AgentNotices.streamRestarted(ordering: apiError.message.contains("ordering"))
+        }
+        return AgentNotices.streamRestarted()
+    }
+
+    private func recoverStream(notice: UserNotice) async {
+        defer {
+            streamRecoveryTask = nil
+            if streamRecoveryPending {
+                streamRecoveryPending = false
+                startStreamRecovery(after: nil)
+            }
+        }
+        teardownConnection()
+        connection = .idle
+        showNotice(notice)
+        await connect(allowAutoStart: false)
     }
 
     private func handle(_ event: ClientEvent) {
@@ -1247,7 +1334,14 @@ final class AppModel {
     }
 
     func syncOpenAttachments() async {
-        let open = Set(workspace.panes.flatMap { $0.tabs.map(\.sessionID) })
+        var open = Set(workspace.panes.flatMap { $0.tabs.map(\.sessionID) })
+        // The context-panel shell is not a workspace tab, but it streams like
+        // any other session, so it needs the same attach and snapshot replay.
+        if contextShowsTerminal,
+           let scratchID = panelScratchID,
+           scratchSession != nil {
+            open.insert(scratchID)
+        }
         for id in open where !paintsPreview(id) {
             await attachIfNeeded(id)
         }
@@ -1270,24 +1364,39 @@ final class AppModel {
         defer { attachingSessionIDs.remove(sessionID) }
 
         let controller = controller(for: sessionID)
-        do {
-            let attached = try await client.attachSession(id: sessionID)
-            attachedSessionIDs.insert(sessionID)
-            controller.reset()
-            controller.feed(attached.output.data)
-            controller.update(status: attached.session.status)
-            updateMetadata(attached.session)
-            if let size = controller.currentSize {
-                enqueueResize(size, for: sessionID)
-            }
-            await refreshGit(cwd: attached.session.cwd)
-        } catch {
-            if case let FleetError.api(apiError) = error, apiError.code == "already_attached" {
-                attachedSessionIDs.insert(sessionID)
+        for attempt in 1...2 {
+            do {
+                let attached = try await client.attachSession(id: sessionID)
+                await applyAttachment(attached, to: controller, sessionID: sessionID)
+                return
+            } catch {
+                // The daemon still holds an attachment for this session, so it
+                // sent no snapshot. Drop the stale attachment and attach once
+                // more, which replays one.
+                if attempt == 1, AgentNotices.code(of: error) == "already_attached" {
+                    try? await client.detachSession(id: sessionID)
+                    continue
+                }
+                showNotice(notice(for: error, action: .attach, sessionID: sessionID))
                 return
             }
-            showNotice(notice(for: error, action: .attach, sessionID: sessionID))
         }
+    }
+
+    private func applyAttachment(
+        _ attached: AttachedSession,
+        to controller: TerminalController,
+        sessionID: String
+    ) async {
+        attachedSessionIDs.insert(sessionID)
+        controller.reset()
+        controller.feed(attached.output.data)
+        controller.update(status: attached.session.status)
+        updateMetadata(attached.session)
+        if let size = controller.currentSize {
+            enqueueResize(size, for: sessionID)
+        }
+        await refreshGit(cwd: attached.session.cwd)
     }
 
     private func paintPreview(_ sessionID: String, size: TerminalSize) {

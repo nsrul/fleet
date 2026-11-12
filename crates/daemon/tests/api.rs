@@ -631,6 +631,54 @@ async fn attaching_replays_output_produced_before_attach() {
 }
 
 #[tokio::test]
+async fn a_duplicate_attach_is_rejected_and_detaching_resynchronizes() {
+    let daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+
+    client
+        .request(create_session("dup", r#"printf 'before\n'; sleep 30"#))
+        .await
+        .expect("create a session");
+
+    let (first, mut output) = attach(&mut client, "dup").await;
+    collect_until(&mut client, &mut output, "before").await;
+
+    // One attachment per connection: a second attach must say so instead of
+    // silently streaming nothing.
+    let error = client
+        .request(Command::AttachSession { id: "dup".into() })
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::AlreadyAttached);
+
+    // Detaching and attaching again is the documented recovery, and the new
+    // attachment replays a snapshot that covers what the first one saw.
+    client
+        .request(Command::DetachSession { id: "dup".into() })
+        .await
+        .expect("detach the session");
+    let (second, replay) = attach(&mut client, "dup").await;
+    assert!(
+        replay.text().contains("before"),
+        "expected a replayed snapshot, got {:?}",
+        replay.text()
+    );
+    assert!(
+        second.output.next_seq >= first.output.next_seq,
+        "the replayed snapshot must not restart behind the first one: {} vs {}",
+        second.output.next_seq,
+        first.output.next_seq
+    );
+
+    client
+        .request(Command::StopSession { id: "dup".into() })
+        .await
+        .expect("stop the session");
+}
+
+#[tokio::test]
 async fn invalid_requests_return_clear_errors() {
     let daemon = Daemon::spawn(None);
     daemon.wait_ready();

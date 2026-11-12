@@ -136,6 +136,26 @@ enum AgentNotices {
         )
     }
 
+    /// The daemon dropped this window for falling behind on one session's
+    /// output. Fleet reconnects and replays a snapshot on its own.
+    static func streamRestarted(ordering: Bool) -> UserNotice {
+        UserNotice(
+            "Fleet reconnected to the daemon.",
+            detail: ordering
+                ? "Terminal output arrived out of order, so Fleet refreshed every open agent from a fresh snapshot."
+                : "Terminal output arrived faster than this window could read it, so Fleet refreshed every open agent from a fresh snapshot."
+        )
+    }
+
+    /// The event stream ended without a reason Fleet can attribute. The app
+    /// still reconnects and refreshes every pane before reporting anything.
+    static func streamRestarted() -> UserNotice {
+        UserNotice(
+            "Fleet reconnected to the daemon.",
+            detail: "The connection ended unexpectedly, so Fleet refreshed every open agent from a fresh snapshot."
+        )
+    }
+
     static func displayPath(_ path: String) -> String {
         let home = NSHomeDirectory()
         if path == home { return "~" }

@@ -16,6 +16,14 @@ pub struct OutboundFrame {
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
 
+impl OutboundFrame {
+    /// The encoded frame, for tests that inspect what was queued.
+    #[cfg(test)]
+    pub(super) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum OutboundError {
     #[error("the client connection is closed")]
