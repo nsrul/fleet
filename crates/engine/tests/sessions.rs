@@ -145,6 +145,35 @@ async fn sessions_inherit_the_environment_and_use_the_requested_cwd() {
 }
 
 #[tokio::test]
+async fn session_info_reports_the_requested_launch() {
+    use std::ffi::OsString;
+
+    let mut engine = Engine::start();
+    let spec = SessionSpec::new(id("launch"), "/bin/sh")
+        .arg("-c")
+        .arg("sleep 30")
+        .cwd(std::env::current_dir().unwrap())
+        .env("FLEET_TEST_LAUNCH", "yes")
+        .size(TerminalSize::new(30, 100));
+    let handle = engine.spawn_session(spec).unwrap();
+
+    // A fork rebuilds its command from this, so it has to keep the exact
+    // arguments, the requested environment, and the size.
+    let info = handle.info();
+    assert_eq!(info.program, OsString::from("/bin/sh"));
+    assert_eq!(info.args, ["-c", "sleep 30"].map(OsString::from).to_vec());
+    assert_eq!(
+        info.env.get(&OsString::from("FLEET_TEST_LAUNCH")),
+        Some(&OsString::from("yes"))
+    );
+    assert_eq!(info.env.len(), 1);
+    assert_eq!(info.size, TerminalSize::new(30, 100));
+
+    handle.terminate().await.unwrap();
+    engine.shutdown().await;
+}
+
+#[tokio::test]
 async fn input_produces_output() {
     let mut engine = Engine::start();
     let script = concat!(

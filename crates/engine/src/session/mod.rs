@@ -257,7 +257,12 @@ pub struct SessionInfo {
     pub id: SessionId,
     pub pid: Option<u32>,
     pub program: OsString,
+    /// Arguments after the program, as they were requested at spawn.
+    pub args: Vec<OsString>,
     pub cwd: PathBuf,
+    /// Environment variables requested at spawn. Inherited variables are not
+    /// listed.
+    pub env: BTreeMap<OsString, OsString>,
     pub size: TerminalSize,
     pub status: SessionStatus,
 }
@@ -359,7 +364,9 @@ impl SessionHandle {
             id: self.inner.id.clone(),
             pid: self.inner.pid,
             program: self.inner.program.clone(),
+            args: self.inner.args.clone(),
             cwd: self.inner.cwd.clone(),
+            env: self.inner.env.clone(),
             size: *self
                 .inner
                 .size
@@ -564,7 +571,9 @@ struct SessionInner {
     id: SessionId,
     pid: Option<u32>,
     program: OsString,
+    args: Vec<OsString>,
     cwd: PathBuf,
+    env: BTreeMap<OsString, OsString>,
     size: Mutex<TerminalSize>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
@@ -771,7 +780,9 @@ fn spawn_session(spec: SessionSpec) -> Result<SessionHandle, SessionError> {
             id,
             pid,
             program: spec.program,
+            args: spec.args,
             cwd,
+            env: spec.env,
             size: Mutex::new(spec.size),
             master: Mutex::new(master),
             writer: Mutex::new(writer),

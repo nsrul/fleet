@@ -323,7 +323,12 @@ public struct SessionInfo: Codable, Identifiable, Equatable, Sendable {
     public let id: String
     public let pid: UInt32?
     public let program: String
+    /// Arguments passed after the program.
+    public let args: [String]
     public let cwd: String
+    /// Environment variables the client set for this session. The daemon's own
+    /// environment is not included.
+    public let env: [String: String]
     public let size: TerminalSize
     public let status: SessionStatus
 
@@ -331,16 +336,45 @@ public struct SessionInfo: Codable, Identifiable, Equatable, Sendable {
         id: String,
         pid: UInt32?,
         program: String,
+        args: [String] = [],
         cwd: String,
+        env: [String: String] = [:],
         size: TerminalSize,
         status: SessionStatus
     ) {
         self.id = id
         self.pid = pid
         self.program = program
+        self.args = args
         self.cwd = cwd
+        self.env = env
         self.size = size
         self.status = status
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case pid
+        case program
+        case args
+        case cwd
+        case env
+        case size
+        case status
+    }
+
+    /// A daemon that predates `args` and `env` omits them. Reading the session
+    /// list must still work against one.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        pid = try container.decodeIfPresent(UInt32.self, forKey: .pid)
+        program = try container.decode(String.self, forKey: .program)
+        args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
+        cwd = try container.decode(String.self, forKey: .cwd)
+        env = try container.decodeIfPresent([String: String].self, forKey: .env) ?? [:]
+        size = try container.decode(TerminalSize.self, forKey: .size)
+        status = try container.decode(SessionStatus.self, forKey: .status)
     }
 
     public var isRunning: Bool {

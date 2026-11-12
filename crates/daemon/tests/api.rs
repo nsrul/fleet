@@ -679,6 +679,72 @@ async fn a_duplicate_attach_is_rejected_and_detaching_resynchronizes() {
 }
 
 #[tokio::test]
+async fn a_session_reports_its_launch_arguments_and_environment() {
+    let daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let command = Command::CreateSession(CreateSession {
+        id: "launch".into(),
+        program: "/bin/sh".into(),
+        args: vec!["-c".into(), "sleep 30".into()],
+        cwd: cwd.clone(),
+        env: BTreeMap::from([("FLEET_TEST_ENV".into(), "kept".into())]),
+        size: TerminalSize::new(30, 100),
+        parent_id: None,
+        brief: None,
+    });
+    let created = expect_session(client.request(command).await.expect("create a session"));
+
+    // Forking rebuilds the command from this metadata, so the daemon has to
+    // report the launch unchanged.
+    assert_eq!(created.args, ["-c", "sleep 30"]);
+    assert_eq!(created.cwd, cwd);
+    assert_eq!(
+        created.env.get("FLEET_TEST_ENV").map(String::as_str),
+        Some("kept")
+    );
+    assert_eq!(created.env.len(), 1);
+    assert_eq!(created.size, TerminalSize::new(30, 100));
+
+    let inspected = expect_session(
+        client
+            .request(Command::InspectSession {
+                id: "launch".into(),
+            })
+            .await
+            .expect("inspect the session"),
+    );
+    assert_eq!(inspected.args, created.args);
+    assert_eq!(inspected.env, created.env);
+    assert_eq!(inspected.size, created.size);
+
+    let listed = match client
+        .request(Command::ListSessions)
+        .await
+        .expect("list sessions")
+    {
+        ResponseData::Sessions(sessions) => sessions,
+        other => panic!("expected a session list, got {other:?}"),
+    };
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].args, created.args);
+    assert_eq!(listed[0].env, created.env);
+
+    client
+        .request(Command::StopSession {
+            id: "launch".into(),
+        })
+        .await
+        .expect("stop the session");
+}
+
+#[tokio::test]
 async fn invalid_requests_return_clear_errors() {
     let daemon = Daemon::spawn(None);
     daemon.wait_ready();

@@ -81,7 +81,7 @@ public enum FleetPluginLaunch {
             // server in this process, which reads OPENCODE_CONFIG_CONTENT.
             return FleetPluginSpec(
                 arguments: ["--standalone"],
-                environment: ["OPENCODE_CONFIG_CONTENT": config]
+                environment: [FleetPluginFiles.opencodeConfigEnvironmentKey: config]
             )
         default:
             return FleetPluginSpec()
@@ -91,6 +91,7 @@ public enum FleetPluginLaunch {
 
 public enum FleetPluginFiles {
     public static let geminiSystemSettingsEnvironmentKey = "GEMINI_CLI_SYSTEM_SETTINGS_PATH"
+    public static let opencodeConfigEnvironmentKey = "OPENCODE_CONFIG_CONTENT"
 
     /// The system settings file Gemini CLI would read, honoring a path the
     /// app itself inherited.

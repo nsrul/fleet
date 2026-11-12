@@ -194,8 +194,9 @@ the verification checklist are in
   daemon currently keeps a bounded raw output backlog rather than terminal state.
 - No session-list-changed event. Sessions created by another client appear only
   after reconnecting or relaunching.
-- Fork starts a new process with the same program and working directory; it does
-  not fork the agent's conversation.
+- Fork starts a new process with the same program, arguments, environment,
+  working directory, and terminal size; it does not fork the agent's
+  conversation.
 - The context panel reads git status and file diffs for the selected session's
   working directory. It does not stage or commit.
 - "Running" is derived from session status. "Needs you" is not implemented, so

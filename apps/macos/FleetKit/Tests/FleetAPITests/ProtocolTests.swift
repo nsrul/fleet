@@ -190,7 +190,9 @@ final class ProtocolTests: XCTestCase {
                 "id": "one",
                 "pid": 42,
                 "program": "/bin/sh",
+                "args": ["-l"],
                 "cwd": "/tmp",
+                "env": {"TERM": "xterm-256color"},
                 "size": {"rows": 24, "cols": 80, "pixel_width": 640, "pixel_height": 384},
                 "status": "running"
               }
@@ -205,8 +207,41 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(requestID, 9)
         XCTAssertEqual(session.id, "one")
         XCTAssertEqual(session.pid, 42)
+        XCTAssertEqual(session.args, ["-l"])
+        XCTAssertEqual(session.env, ["TERM": "xterm-256color"])
         XCTAssertEqual(session.size.pixelWidth, 640)
         XCTAssertEqual(session.status, .running)
+    }
+
+    /// A daemon that predates the launch fields omits them. The app still has
+    /// to read its session list.
+    func testSessionWithoutLaunchFieldsDecodes() throws {
+        let payload = Data("""
+        {
+          "type": "response",
+          "request_id": 9,
+          "result": {
+            "status": "ok",
+            "data": {
+              "kind": "session",
+              "value": {
+                "id": "one",
+                "pid": 42,
+                "program": "/bin/sh",
+                "cwd": "/tmp",
+                "size": {"rows": 24, "cols": 80, "pixel_width": 640, "pixel_height": 384},
+                "status": "running"
+              }
+            }
+          }
+        }
+        """.utf8)
+        let message = try FrameCodec.decode(ServerMessage.self, from: payload)
+        guard case .response(_, .ok(.session(let session))) = message else {
+            return XCTFail("expected a session response")
+        }
+        XCTAssertEqual(session.args, [])
+        XCTAssertEqual(session.env, [:])
     }
 
     func testAttachedSessionDecodesBase64Output() throws {

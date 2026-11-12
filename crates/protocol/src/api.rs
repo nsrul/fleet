@@ -364,7 +364,14 @@ pub struct SessionInfo {
     pub id: String,
     pub pid: Option<u32>,
     pub program: String,
+    /// Arguments passed after the program.
+    #[serde(default)]
+    pub args: Vec<String>,
     pub cwd: String,
+    /// Environment variables the client set for this session. The daemon's own
+    /// environment and the variables it adds itself are not included.
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
     pub size: TerminalSize,
     pub status: SessionStatus,
 }
@@ -511,6 +518,8 @@ pub enum ServerMessage {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use serde_json::json;
 
     use super::{
@@ -628,6 +637,23 @@ mod tests {
     }
 
     #[test]
+    fn session_info_without_launch_fields_still_decodes() {
+        // A daemon that predates args/env omits them; the app still has to read
+        // the session list.
+        let legacy = json!({
+            "id": "one",
+            "pid": null,
+            "program": "/bin/sh",
+            "cwd": "/tmp",
+            "size": {"rows": 24, "cols": 80},
+            "status": "running",
+        });
+        let info: SessionInfo = serde_json::from_value(legacy).unwrap();
+        assert!(info.args.is_empty());
+        assert!(info.env.is_empty());
+    }
+
+    #[test]
     fn responses_and_errors_round_trip() {
         let response = ServerMessage::Response {
             request_id: 9,
@@ -635,7 +661,9 @@ mod tests {
                 id: "one".into(),
                 pid: Some(42),
                 program: "/bin/sh".into(),
+                args: vec!["-l".into()],
                 cwd: "/tmp".into(),
+                env: BTreeMap::from([("TERM".into(), "xterm-256color".into())]),
                 size: TerminalSize::new(24, 80),
                 status: SessionStatus::Running,
             })),
@@ -644,6 +672,11 @@ mod tests {
         assert_eq!(encoded["type"], "response");
         assert_eq!(encoded["result"]["status"], "ok");
         assert_eq!(encoded["result"]["data"]["kind"], "session");
+        assert_eq!(encoded["result"]["data"]["value"]["args"], json!(["-l"]));
+        assert_eq!(
+            encoded["result"]["data"]["value"]["env"],
+            json!({"TERM": "xterm-256color"})
+        );
         assert_eq!(
             serde_json::from_value::<ServerMessage>(encoded).unwrap(),
             response
