@@ -1010,7 +1010,19 @@ fn protocol_info(info: &EngineSessionInfo) -> SessionInfo {
         id: info.id.as_str().to_owned(),
         pid: info.pid,
         program: info.program.to_string_lossy().into_owned(),
+        args: info
+            .args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect(),
         cwd: info.cwd.to_string_lossy().into_owned(),
+        // The API only accepts UTF-8 environment entries, but the engine is a
+        // library and could hold others. Skip those instead of corrupting them.
+        env: info
+            .env
+            .iter()
+            .filter_map(|(key, value)| Some((key.to_str()?.to_owned(), value.to_str()?.to_owned())))
+            .collect(),
         size: protocol_size(info.size),
         status: protocol_status(&info.status),
     }

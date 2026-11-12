@@ -71,7 +71,7 @@ Installed agent CLIs use their own credentials, permissions, and provider connec
 - `AppModel` owns connection state, sessions, attach/input/resize calls, focus, layout, and git status. `TerminalController` owns each SwiftTerm view and its delegate.
 - SwiftTerm 1.99.1 renders terminal output, scrollback, selection, and keyboard input. The daemon sends raw PTY bytes; the frontend owns emulation.
 - Layout follows the Figma prototype: 256 pt sidebar, terminal panes, 504 pt git context panel, stacked or side-by-side panes.
-- Current limitation: one project, no persistence, and no session-list-changed event. Externally created sessions require reconnect or relaunch. Fork starts a new process with the same program and working directory, not a forked conversation.
+- Current limitation: one project and no persistence. Fork starts a new process with the same program, arguments, environment, working directory, and terminal size; it does not fork the conversation.
 
 ### Future components
 
@@ -223,6 +223,8 @@ The first client frame must be `hello` with `protocol_version: 1` within five se
 | `detach_session` | `id` | `acknowledged` |
 
 Input is limited to 1 MiB per request. Terminal sizes require non-zero rows and columns. Create-session requests reject empty programs or working directories, NUL bytes, and malformed environment names before reaching the engine.
+
+A `session` payload carries the launch it was created with: `program`, `args`, `cwd`, the `env` the client set (the daemon's inherited environment is not listed), and `size`. Clients use it to rebuild the same command, for example when starting a forked session. A daemon that predates those fields omits `args` and `env`.
 
 ### Attach stream
 

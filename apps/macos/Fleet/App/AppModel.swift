@@ -1193,13 +1193,18 @@ final class AppModel {
     func forkSession(_ sessionID: String) {
         if isPreview { return }
         guard let session = session(id: sessionID) else { return }
+        let presetID = AgentCatalog.preset(forProgram: session.program)?.id
+        let arguments = SessionFork.arguments(session.args, presetID: presetID)
+        let environment = SessionFork.environment(session.env)
         Task {
             do {
                 _ = try await createSession(
                     program: session.program,
-                    arguments: [],
+                    arguments: arguments,
                     cwd: session.cwd,
-                    requestedName: "\(session.id)-fork"
+                    requestedName: "\(session.id)-fork",
+                    environment: environment,
+                    size: session.size
                 )
             } catch {
                 showNotice(notice(for: error, action: .fork, sessionID: session.id))
@@ -1212,7 +1217,9 @@ final class AppModel {
         program: String,
         arguments: [String],
         cwd: String,
-        requestedName: String
+        requestedName: String,
+        environment: [String: String] = [:],
+        size: TerminalSize? = nil
     ) async throws -> SessionInfo {
         guard let client else {
             throw FleetError.daemonUnavailable("Not connected to the daemon.")
@@ -1235,13 +1242,15 @@ final class AppModel {
             pluginSpec = AgentCatalog.pluginLaunch(program: program, endpoint: endpoint)
             launchArguments += pluginSpec.arguments
         }
+        var launchEnvironment = environment
+        launchEnvironment.merge(sessionEnvironment(sessionID: id)) { _, session in session }
         let spec = CreateSession(
             id: id,
             program: program,
             args: launchArguments,
             cwd: cwd,
-            env: pluginSpec.applying(to: sessionEnvironment(sessionID: id)),
-            size: TerminalSize(rows: 24, cols: 80)
+            env: pluginSpec.applying(to: launchEnvironment),
+            size: size ?? TerminalSize(rows: 24, cols: 80)
         )
         let session = try await client.createSession(spec)
         if !trimmedName.isEmpty, trimmedName != Self.slug(trimmedName) {

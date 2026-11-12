@@ -616,9 +616,10 @@ private struct SessionRow: View {
                 }
             }
 
-            Button("Fork Agent") {
+            Button("Fork Agent in New Process") {
                 model.forkSession(session.id)
             }
+            .help("Starts a new process with the same command, working directory, and arguments. The conversation is not copied.")
 
             if model.workspace.panes.count == 2 {
                 Button("Open in Other Pane") {
