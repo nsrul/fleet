@@ -161,6 +161,34 @@ final class ClientTests: XCTestCase {
             }
         }
     }
+
+    /// The daemon drops a client that falls behind with a `slow_client`
+    /// rejection. The UI decides whether to recover from the code, so it has
+    /// to survive the closed socket and stay readable.
+    func testSlowClientRejectionEndsTheStreamAndKeepsItsCode() async throws {
+        let server = try MockServer(
+            rejectCode: "slow_client",
+            rejectMessage: "the client fell behind the output stream; reconnect and attach again"
+        )
+        defer { server.stop() }
+        server.start()
+
+        let client = try FleetClient(path: server.path)
+        _ = try await client.connect(clientName: "unit-test")
+
+        var iterator = client.events.makeAsyncIterator()
+        let event = await iterator.next()
+        XCTAssertNil(event, "the event stream should finish so the UI can reconnect")
+
+        guard let error = client.terminalError() as? FleetError,
+              case .rejected(let apiError) = error else {
+            return XCTFail(
+                "expected the rejection to close the connection, got \(String(describing: client.terminalError()))"
+            )
+        }
+        XCTAssertEqual(apiError.code, "slow_client")
+        XCTAssertTrue(apiError.message.contains("fell behind"))
+    }
 }
 
 private enum RequestOutcome: CustomStringConvertible {
@@ -214,15 +242,25 @@ private final class MockServer: @unchecked Sendable {
     private let hangAfterRequest: Bool
     private let replies: Int
     private let respondAfter: TimeInterval
+    private let rejectCode: String?
+    private let rejectMessage: String
     private let listener: Int32
     private let lock = NSLock()
     private var stopped = false
     private var requestsSeen = 0
 
-    init(hangAfterRequest: Bool = false, replies: Int = 1, respondAfter: TimeInterval = 0) throws {
+    init(
+        hangAfterRequest: Bool = false,
+        replies: Int = 1,
+        respondAfter: TimeInterval = 0,
+        rejectCode: String? = nil,
+        rejectMessage: String = ""
+    ) throws {
         self.hangAfterRequest = hangAfterRequest
         self.replies = replies
         self.respondAfter = respondAfter
+        self.rejectCode = rejectCode
+        self.rejectMessage = rejectMessage
         path = "/tmp/fleet-test-\(UUID().uuidString.prefix(8)).sock"
         listener = socket(AF_UNIX, SOCK_STREAM, 0)
         guard listener >= 0 else {
@@ -349,6 +387,15 @@ private final class MockServer: @unchecked Sendable {
                     "daemon_version": "test",
                     "engine_state": "running",
                 ])
+                if let rejectCode {
+                    try writeFrame(client, [
+                        "type": "rejected",
+                        "error": ["code": rejectCode, "message": rejectMessage],
+                    ])
+                    // Let the client read the frame before the socket closes.
+                    Thread.sleep(forTimeInterval: 0.05)
+                    return
+                }
                 var answered = 0
                 while answered < replies {
                     let request = try readRequest(client)

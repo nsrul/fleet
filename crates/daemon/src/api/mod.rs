@@ -1085,9 +1085,13 @@ fn map_session_error(error: SessionError) -> ApiError {
 
 #[cfg(test)]
 mod tests {
-    use fleet_protocol::api::{CreateSession, ErrorCode};
+    use std::sync::Arc;
 
-    use super::build_spec;
+    use fleet_engine::{OutputChunk, SessionId, SessionStatus as EngineSessionStatus};
+    use fleet_protocol::api::{CreateSession, ErrorCode, ServerMessage};
+    use tokio::sync::{broadcast, watch};
+
+    use super::{Outbound, build_spec, pump_session};
 
     fn request() -> CreateSession {
         CreateSession {
@@ -1133,5 +1137,99 @@ mod tests {
             build_spec(zero_size).unwrap_err().code,
             ErrorCode::InvalidTerminalSize
         );
+    }
+
+    fn chunk(seq: u64, text: &str) -> OutputChunk {
+        OutputChunk {
+            seq,
+            bytes: Arc::from(text.as_bytes()),
+        }
+    }
+
+    /// Runs the pump until it gives up, then reports what it queued and
+    /// whether it closed the connection.
+    async fn pump_until_rejected(
+        output: broadcast::Receiver<OutputChunk>,
+        next_seq: u64,
+    ) -> (Vec<ServerMessage>, bool) {
+        let (outbound, mut frames, _closed_sender) = Outbound::new();
+        let mut closed = outbound.subscribe_closed();
+        let (_status_sender, status) = watch::channel(EngineSessionStatus::Running);
+        let (_shutdown_sender, shutdown) = watch::channel(false);
+
+        pump_session(
+            SessionId::new("test").expect("a valid session id"),
+            output,
+            status,
+            EngineSessionStatus::Running,
+            next_seq,
+            outbound,
+            shutdown,
+        )
+        .await;
+
+        let mut messages = Vec::new();
+        while let Ok(frame) = frames.try_recv() {
+            let payload = &frame.bytes()[4..];
+            messages.push(serde_json::from_slice(payload).expect("decode the queued message"));
+        }
+        (messages, *closed.borrow_and_update())
+    }
+
+    fn expect_slow_client(messages: &[ServerMessage], needle: &str) {
+        match messages {
+            [ServerMessage::Rejected { error }] => {
+                assert_eq!(error.code, ErrorCode::SlowClient);
+                assert!(
+                    error.message.contains(needle),
+                    "expected {needle:?} in {:?}",
+                    error.message
+                );
+            }
+            other => panic!("expected one rejection, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn an_ordering_gap_ends_the_attachment_with_slow_client() {
+        let (sender, output) = broadcast::channel(8);
+        sender.send(chunk(5, "later")).expect("queue output");
+
+        let (messages, closed) = pump_until_rejected(output, 0).await;
+
+        expect_slow_client(&messages, "ordering");
+        assert!(closed, "a gap must close the connection for a reconnect");
+    }
+
+    #[tokio::test]
+    async fn a_lagging_consumer_ends_the_attachment_with_slow_client() {
+        // One slot and four sends: the receiver is behind before it reads.
+        let (sender, output) = broadcast::channel(1);
+        for seq in 0..4 {
+            sender.send(chunk(seq, "x")).expect("queue output");
+        }
+
+        let (messages, closed) = pump_until_rejected(output, 0).await;
+
+        expect_slow_client(&messages, "fell behind");
+        assert!(closed, "a lagging client must close the connection");
+    }
+
+    #[tokio::test]
+    async fn output_in_order_is_not_rejected() {
+        let (sender, output) = broadcast::channel(8);
+        sender.send(chunk(0, "one")).expect("queue output");
+        sender.send(chunk(1, "two")).expect("queue output");
+        drop(sender);
+
+        let (messages, _closed) = pump_until_rejected(output, 0).await;
+
+        assert!(
+            messages
+                .iter()
+                .all(|message| matches!(message, ServerMessage::Event { .. })),
+            "expected only output events, got {messages:?}"
+        );
+        assert_eq!(messages.len(), 2);
     }
 }
