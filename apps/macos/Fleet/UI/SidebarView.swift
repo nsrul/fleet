@@ -609,7 +609,7 @@ private struct SessionRow: View {
         .padding(.leading, SidebarList.rowLeading)
         .contextMenu {
             Button("Rename") {
-                draft = model.displayTitle(for: session)
+                draft = model.editableTitle(for: session)
                 // The menu is still dismissing on this turn and would steal focus.
                 Task { @MainActor in
                     isRenaming = true

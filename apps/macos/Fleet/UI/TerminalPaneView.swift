@@ -163,7 +163,7 @@ struct TerminalPaneView: View {
                     },
                     onDoubleClick: {
                         guard let session else { return }
-                        draft = model.displayTitle(for: session)
+                        draft = model.editableTitle(for: session)
                         renamingTabID = tab.id
                         model.focusPane(pane.id)
                     },
@@ -222,7 +222,7 @@ struct TerminalPaneView: View {
         .contextMenu {
             Button("Rename") {
                 guard let session else { return }
-                draft = model.displayTitle(for: session)
+                draft = model.editableTitle(for: session)
                 renamingTabID = tab.id
             }
             if let session {

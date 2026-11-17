@@ -169,7 +169,8 @@ scroll keys or `Page Up` / `Page Down` in that state.
 
 - 256 pt sidebar with project header, filters, session rows, context menus, and
   a daemon status footer.
-- Tabbed panes, side-by-side or stacked, with session titles, focus, and status.
+- Tabbed panes, side-by-side or stacked, with the title the agent reports
+  (falling back to the session ID), focus, and status.
 - Context panel that follows the focused agent's working tree, shows the diff
   for the file the agent just changed, and can open a shell for Helix.
 - New-agent sheet with agent presets, working directory, and optional name.

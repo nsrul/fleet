@@ -596,11 +596,28 @@ final class AppModel {
     }
 
     func displayTitle(for session: SessionInfo) -> String {
-        if let name = sessionNames[session.id]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !name.isEmpty {
+        if let name = sessionName(for: session) {
             return name
         }
+        // Agents report the task they are working on through OSC 0/2. The
+        // controller drops shell names, so a reported title is worth showing.
+        if let reported = existingController(for: session.id)?.taskTitle {
+            return reported
+        }
         return Self.displayTitle(forSessionID: session.id)
+    }
+
+    /// The name to start a rename from: the one the user set, or the ID. A
+    /// reported title changes with the agent's task, so it is not a draft.
+    func editableTitle(for session: SessionInfo) -> String {
+        sessionName(for: session) ?? Self.displayTitle(forSessionID: session.id)
+    }
+
+    private func sessionName(for session: SessionInfo) -> String? {
+        guard let name = sessionNames[session.id]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty
+        else { return nil }
+        return name
     }
 
     func setSessionName(_ sessionID: String, _ name: String) {
