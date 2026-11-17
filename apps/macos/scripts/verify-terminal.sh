@@ -40,6 +40,13 @@ swiftc -o "$TMP/socket-path-tests" \
 "$TMP/socket-path-tests"
 
 echo
+echo "== Terminal titles"
+swiftc -o "$TMP/terminal-title-tests" \
+  "$APP_DIR/Fleet/Services/TerminalTitle.swift" \
+  "$APP_DIR/tests/TerminalTitleTests.swift"
+"$TMP/terminal-title-tests"
+
+echo
 echo "== Build fleet-daemon"
 (cd "$ROOT" && cargo build -p fleet-daemon --locked)
 

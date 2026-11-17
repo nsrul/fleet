@@ -145,17 +145,9 @@ final class TerminalController: TerminalViewDelegate {
         }
     }
 
-    private static let shellNames = ["zsh", "bash", "sh", "fish", "login", "tmux"]
-
     /// OSC title when it names the task. Shell names are not a task.
     private var usefulTitle: String? {
-        let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return nil }
-        let lowered = value.lowercased()
-        if Self.shellNames.contains(where: { lowered == $0 || lowered.hasPrefix("\($0) ") }) {
-            return nil
-        }
-        return value
+        TerminalTitle.useful(title)
     }
 
     var displayTitle: String {
