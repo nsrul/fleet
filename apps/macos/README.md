@@ -205,7 +205,13 @@ SwiftUI does not forward command-button identifiers to macOS menus, so
 `AppDelegate` identifies the native Split and Stop menu items when tracking
 begins. Cancel controls also use `split.cancel` and `session.stop.cancel`.
 The test hides the context panel while exercising tab controls, then restores
-it for mode switching, so those controls remain visible on small CI desktops.
+it for mode switching. Before testing, CI runs
+`swift apps/macos/scripts/prepare-ui-test-desktop.swift` to select a supported
+desktop mode of at least 1440×900; the runner's default 1024×768 desktop clips
+Fleet's minimum-width window. This helper selects a desktop-usable mode only
+when needed and keeps it for the login session, so it persists into the separate
+UI-test step without changing permanent display preferences. Run it only on a
+dedicated test desktop.
 
 The prototype was exercised in the running app with Claude Code 2.1.311 and
 Gemini CLI 0.46.0 on macOS 27:
