@@ -174,13 +174,17 @@ final class AccessibilityTests: XCTestCase {
         app.buttons["new-agent.create"].click()
         let createdRow = app.buttons["sidebar.session.ui-created-shell"]
         XCTAssertTrue(createdRow.waitForExistence(timeout: 10))
+        // The row appears before attachment/git work finishes and the modal closes.
+        let cancelNewAgent = app.buttons["new-agent.cancel"]
+        XCTAssertTrue(wait(cancelNewAgent, matching: NSPredicate(format: "exists == false")))
         let created = try await client.inspectSession(id: "ui-created-shell")
         XCTAssertTrue(created.isRunning)
         XCTAssertEqual(created.cwd, project.path)
 
         app.buttons["workspace.new-agent.test-pane"].click()
-        app.buttons["new-agent.cancel"].click()
-        XCTAssertFalse(app.buttons["new-agent.cancel"].exists)
+        XCTAssertTrue(cancelNewAgent.waitForExistence(timeout: 5))
+        cancelNewAgent.click()
+        XCTAssertTrue(wait(cancelNewAgent, matching: NSPredicate(format: "exists == false")))
         XCTAssertTrue(app.buttons["workspace.new-agent.test-pane"].exists)
 
         XCTAssertEqual(contextToggle.label, "Show context panel")
