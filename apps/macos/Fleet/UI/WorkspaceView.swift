@@ -102,6 +102,9 @@ struct WorkspaceSplit: View {
             showsSidebarToggle: showsSidebar,
             showsContextToggle: showsContext
         )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("workspace.pane.\(pane.id)")
+        .accessibilityLabel("Terminal pane \(index + 1)")
     }
 
     private func divider(horizontal: Bool, total: CGFloat, minimum: CGFloat) -> some View {
@@ -314,6 +317,8 @@ struct SplitPickerSheet: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("split.session.\(session.id)")
+                            .accessibilityLabel(model.displayTitle(for: session))
                         }
                     }
                 }
@@ -326,6 +331,7 @@ struct SplitPickerSheet: View {
                 }
                 .keyboardShortcut(.cancelAction)
                 .buttonStyle(TerminalSecondaryButtonStyle())
+                .accessibilityIdentifier("split.cancel")
             }
         }
         .padding(20)

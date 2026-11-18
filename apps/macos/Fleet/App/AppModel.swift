@@ -362,7 +362,8 @@ final class AppModel {
         } else {
             socketPath = defaults.string(forKey: Self.socketKey) ?? FleetPaths.defaultSocketPath
         }
-        autoStartDaemon = defaults.object(forKey: Self.autoStartKey) as? Bool ?? true
+        autoStartDaemon = defaults.object(forKey: Self.autoStartKey) == nil
+            ? true : defaults.bool(forKey: Self.autoStartKey)
         terminal = Self.loadTerminal(from: defaults)
         showSidebar = defaults.object(forKey: Self.showSidebarKey) as? Bool ?? true
         showContext = defaults.object(forKey: Self.showContextKey) as? Bool ?? true

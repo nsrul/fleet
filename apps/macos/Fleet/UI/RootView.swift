@@ -51,9 +51,11 @@ struct RootView: View {
                     model.stopSession(id)
                 }
             }
+            .accessibilityIdentifier("session.stop.confirm")
             Button("Cancel", role: .cancel) {
                 model.pendingStopID = nil
             }
+            .accessibilityIdentifier("session.stop.cancel")
         } message: {
             Text("The process receives a termination request. Other sessions keep running.")
         }
@@ -80,6 +82,7 @@ struct RootView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("notice.error.title")
                 Button {
                     model.clearError()
                 } label: {
@@ -90,7 +93,8 @@ struct RootView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss")
+                .accessibilityLabel("Dismiss error")
+                .accessibilityIdentifier("notice.error.dismiss")
                 .help("Dismiss")
             }
             .padding(.leading, 12)
@@ -106,6 +110,8 @@ struct RootView: View {
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
             )
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("notice.error")
     }
 }
 

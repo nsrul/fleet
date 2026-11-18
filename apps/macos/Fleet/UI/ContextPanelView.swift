@@ -11,9 +11,19 @@ struct ContextPanelView: View {
             header
             HorizontalDivider()
             if model.contextShowsTerminal {
-                ContextTerminalView(model: model)
+                Group {
+                    ContextTerminalView(model: model)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("context.terminal")
+                .accessibilityLabel("Terminal")
             } else {
-                review
+                Group {
+                    review
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("context.changes")
+                .accessibilityLabel("Changes")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -21,6 +31,9 @@ struct ContextPanelView: View {
             PanelSurface(solid: Palette.contextBackground, solidity: model.panelSolidity)
                 .ignoresSafeArea()
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("context.panel")
+        .accessibilityLabel("Context panel")
     }
 
     private var session: SessionInfo? { model.contextSession }
@@ -106,6 +119,7 @@ struct ContextPanelView: View {
         headerAction("Terminal", help: "Open a shell in this panel") {
             model.contextShowsTerminal = true
         }
+        .accessibilityIdentifier("context.show-terminal")
     }
 
     @ViewBuilder
@@ -113,6 +127,7 @@ struct ContextPanelView: View {
         headerAction("Changes", help: "Show the files and diff") {
             model.contextShowsTerminal = false
         }
+        .accessibilityIdentifier("context.show-changes")
         if model.scratchSession?.isRunning == true {
             headerAction("Move to middle", help: "Move this shell into the middle pane and the sidebar") {
                 model.promoteScratch()
@@ -280,7 +295,8 @@ struct ContextPanelView: View {
         Button(title, action: action)
             .buttonStyle(HeaderActionStyle())
             .help(help)
-            .accessibilityLabel(help)
+            .accessibilityLabel(title)
+            .accessibilityHint(help)
     }
 
     private func reveal(_ change: GitChange, cwd: String) {

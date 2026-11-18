@@ -45,8 +45,11 @@ final class PluginServer: @unchecked Sendable {
         let fd = try Self.bindLoopback()
         do {
             let port = try Self.boundPort(fd)
-            let directory = FileManager.default.temporaryDirectory
-                .appendingPathComponent("fleet-plugin-\(getuid())", isDirectory: true)
+            // Foundation can ignore TMPDIR on macOS; honor a process-specific directory.
+            let temporary = ProcessInfo.processInfo.environment["TMPDIR"]
+                .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+                ?? FileManager.default.temporaryDirectory
+            let directory = temporary.appendingPathComponent("fleet-plugin-\(getuid())", isDirectory: true)
             let url = "http://127.0.0.1:\(port)/mcp/\(token)"
             let claudeConfig = try FleetPluginFiles.writeClaudeConfig(url: url, directory: directory)
             let geminiSettings = try? FleetPluginFiles.writeGeminiSettings(

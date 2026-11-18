@@ -111,6 +111,7 @@ struct TerminalPaneView: View {
         .buttonStyle(.plain)
         .help("New agent")
         .accessibilityLabel("New agent")
+        .accessibilityIdentifier("workspace.new-agent.\(pane.id)")
     }
 
     private func tabButton(_ tab: WorkspaceTab, index: Int) -> some View {
@@ -128,6 +129,7 @@ struct TerminalPaneView: View {
         return ZStack {
             if renamingTabID == tab.id {
                 InlineNameField(text: $draft, onCommit: commitRename, onCancel: cancelRename)
+                    .accessibilityLabel("Session name")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     .padding(.horizontal, 8)
             } else {
@@ -207,6 +209,7 @@ struct TerminalPaneView: View {
                         .buttonStyle(.plain)
                         .help("Close tab")
                         .accessibilityLabel("Close \(title)")
+                        .accessibilityIdentifier("workspace.close-tab.\(tab.id)")
                     }
                 }
                 .padding(.trailing, 8)
@@ -248,8 +251,13 @@ struct TerminalPaneView: View {
             }
         }
         .help(title)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("workspace.tab.\(tab.id)")
         .accessibilityLabel("\(title), tab \(index + 1)")
-        .accessibilityAddTraits(active ? .isSelected : [])
+        .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction {
+            model.editWorkspace(.focusTab(paneID: pane.id, tabID: tab.id))
+        }
     }
 
     private func stateDot(_ session: SessionInfo) -> some View {

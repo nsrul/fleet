@@ -81,6 +81,17 @@ jobs:
       - name: Verify
         run: scripts/verify.sh
 
+      - name: Accessibility UI test
+        run: |
+          xcodebuild \
+            -project apps/macos/Fleet.xcodeproj \
+            -scheme FleetAccessibility \
+            -destination 'platform=macOS' \
+            -derivedDataPath apps/macos/.build \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            test CODE_SIGN_IDENTITY=-
+
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v4
