@@ -195,7 +195,7 @@ pane, or tab IDs—not titles, array positions, or current status:
 | Agent preset | `new-agent.preset.<preset-id>` |
 | New-agent fields | `new-agent.program`, `new-agent.name`, `new-agent.directory` |
 | Create / Cancel / directory chooser | `new-agent.create`, `new-agent.cancel`, `new-agent.choose-directory` |
-| Context panel | `context.panel` |
+| Context panel / visibility toggle | `context.panel` / `workspace.toggle-context` |
 | Context modes / mode actions | `context.changes`, `context.terminal`, `context.show-changes`, `context.show-terminal` |
 | Error toast / title / dismissal | `notice.error`, `notice.error.title`, `notice.error.dismiss` |
 
@@ -204,6 +204,8 @@ with `app.descendants(matching: .any)` rather than assuming they are buttons.
 SwiftUI does not forward command-button identifiers to macOS menus, so
 `AppDelegate` identifies the native Split and Stop menu items when tracking
 begins. Cancel controls also use `split.cancel` and `session.stop.cancel`.
+The test hides the context panel while exercising tab controls, then restores
+it for mode switching, so those controls remain visible on small CI desktops.
 
 The prototype was exercised in the running app with Claude Code 2.1.311 and
 Gemini CLI 0.46.0 on macOS 27:

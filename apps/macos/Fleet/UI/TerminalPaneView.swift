@@ -95,6 +95,7 @@ struct TerminalPaneView: View {
             isOn: model.showContext,
             action: model.toggleContext
         )
+        .accessibilityIdentifier("workspace.toggle-context")
     }
 
     private var newTabButton: some View {

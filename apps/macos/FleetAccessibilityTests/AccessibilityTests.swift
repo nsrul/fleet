@@ -104,6 +104,11 @@ final class AccessibilityTests: XCTestCase {
         XCTAssertEqual(pane.label, "Terminal pane 1")
         let pluginConfig = temporary.appendingPathComponent("fleet-plugin-\(getuid())/claude-mcp.json")
         XCTAssertTrue(FileManager.default.fileExists(atPath: pluginConfig.path), "MCP files must stay inside the fixture")
+        // Hosted desktops can leave only a 320pt pane; keep tab actions clear of clipping.
+        let contextToggle = app.buttons["workspace.toggle-context"]
+        XCTAssertEqual(contextToggle.label, "Hide context panel")
+        contextToggle.click()
+        XCTAssertTrue(wait(element("context.panel", in: app), matching: NSPredicate(format: "exists == false")))
         let firstRow = app.buttons["sidebar.session.first"]
         let secondRow = app.buttons["sidebar.session.second"]
         XCTAssertTrue(firstRow.waitForExistence(timeout: 5))
@@ -178,7 +183,9 @@ final class AccessibilityTests: XCTestCase {
         XCTAssertFalse(app.buttons["new-agent.cancel"].exists)
         XCTAssertTrue(app.buttons["workspace.new-agent.test-pane"].exists)
 
-        XCTAssertTrue(element("context.panel", in: app).exists)
+        XCTAssertEqual(contextToggle.label, "Show context panel")
+        contextToggle.click()
+        XCTAssertTrue(element("context.panel", in: app).waitForExistence(timeout: 5))
         XCTAssertTrue(element("context.changes", in: app).waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["context.show-terminal"].label, "Terminal")
         app.buttons["context.show-terminal"].click()
