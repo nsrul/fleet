@@ -47,6 +47,13 @@ swiftc -o "$TMP/terminal-title-tests" \
 "$TMP/terminal-title-tests"
 
 echo
+echo "== Agent choice"
+swiftc -o "$TMP/agent-choice-tests" \
+  "$APP_DIR/Fleet/Services/AgentChoice.swift" \
+  "$APP_DIR/tests/AgentChoiceTests.swift"
+"$TMP/agent-choice-tests"
+
+echo
 echo "== Build fleet-daemon"
 (cd "$ROOT" && cargo build -p fleet-daemon --locked)
 
