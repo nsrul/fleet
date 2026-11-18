@@ -197,6 +197,7 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Clear search")
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 10)
@@ -235,6 +236,7 @@ struct SidebarView: View {
         .focusEffectDisabled()
         .help("New agent (⌘N)")
         .accessibilityLabel("New agent")
+        .accessibilityIdentifier("sidebar.new-agent")
         .padding(.horizontal, SidebarList.inset)
         .padding(.top, 6)
     }
@@ -425,6 +427,7 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help("Clear selection")
+                .accessibilityLabel("Clear selection")
             }
             .padding(.leading, 20)
             .padding(.trailing, 10)
@@ -577,6 +580,7 @@ private struct SessionRow: View {
                 .accessibilityLabel(
                     "\(AgentCatalog.displayName(for: session.program)), \(model.displayTitle(for: session))"
                 )
+                .accessibilityIdentifier("sidebar.session.\(session.id)")
                 .accessibilityValue(session.isRunning ? "Running" : "Stopped")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
 
@@ -589,6 +593,7 @@ private struct SessionRow: View {
                                 tint: Palette.error,
                                 action: onStop
                             )
+                            .accessibilityIdentifier("sidebar.stop.\(session.id)")
                         }
                         RowActionButton(
                             systemImage: "trash",
@@ -596,6 +601,7 @@ private struct SessionRow: View {
                             tint: Palette.error,
                             action: onDelete
                         )
+                        .accessibilityIdentifier("sidebar.delete.\(session.id)")
                     }
                     .padding(.trailing, 6)
                 }

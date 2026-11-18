@@ -1,4 +1,8 @@
 name: Fleet
+configs:
+  Debug: debug
+  Release: release
+  UITesting: debug
 options:
   bundleIdPrefix: dev.fleet
   deploymentTarget:
@@ -44,6 +48,9 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         COMBINE_HIDPI_IMAGES: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+      configs:
+        UITesting:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.fleet.macos.uitesting
     dependencies:
       - package: FleetKit
         product: FleetAPI
@@ -68,7 +75,31 @@ targets:
             echo "warning: fleet-daemon is not built; the app will search target/debug and PATH"
           fi
 
+  FleetAccessibilityTests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: FleetAccessibilityTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Fleet
+        CODE_SIGN_ENTITLEMENTS: FleetAccessibilityTests/Runner.entitlements
+    dependencies:
+      - target: Fleet
+      - package: FleetKit
+        product: FleetAPI
+
 schemes:
+  FleetAccessibility:
+    build:
+      targets:
+        Fleet: all
+        FleetAccessibilityTests: [test]
+    test:
+      config: UITesting
+      targets:
+        - FleetAccessibilityTests
   Fleet:
     build:
       targets:

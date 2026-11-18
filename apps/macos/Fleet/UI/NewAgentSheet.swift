@@ -65,6 +65,8 @@ struct NewAgentSheet: View {
                     TextField("/path/to/agent", text: $customProgram)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 11, design: .monospaced))
+                        .accessibilityLabel("Program")
+                        .accessibilityIdentifier("new-agent.program")
                 }
             }
 
@@ -78,6 +80,8 @@ struct NewAgentSheet: View {
                 TextField("Optional; defaults to the agent name", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .font(Typography.body)
+                    .accessibilityLabel("Session name")
+                    .accessibilityIdentifier("new-agent.name")
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -89,10 +93,14 @@ struct NewAgentSheet: View {
                     TextField("~/code/project", text: $cwd)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 11, design: .monospaced))
+                        .accessibilityLabel("Working directory")
+                        .accessibilityIdentifier("new-agent.directory")
                     Button("Choose…") {
                         chooseDirectory()
                     }
                     .buttonStyle(SecondaryButtonStyle())
+                    .accessibilityLabel("Choose working directory")
+                    .accessibilityIdentifier("new-agent.choose-directory")
                 }
             }
 
@@ -114,6 +122,7 @@ struct NewAgentSheet: View {
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 .keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("new-agent.cancel")
 
                 Button {
                     create()
@@ -130,6 +139,8 @@ struct NewAgentSheet: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(!canCreate)
                 .keyboardShortcut(.defaultAction)
+                .accessibilityLabel("Create agent")
+                .accessibilityIdentifier("new-agent.create")
             }
         }
         .padding(24)
@@ -184,6 +195,10 @@ struct NewAgentSheet: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .help(helpText(for: item, installed: installed))
+        .accessibilityIdentifier("new-agent.preset.\(item.id)")
+        .accessibilityLabel(item.title)
+        .accessibilityValue(installed ? "Available" : "Not installed")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func helpText(for item: AgentPreset, installed: Bool) -> String {

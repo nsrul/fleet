@@ -147,6 +147,72 @@ socket, and runs `FleetProbe --smoke`. The smoke test checks create, input,
 output, Unicode (`café 日本語`), resize, and exit. It then prints the manual UI
 checklist.
 
+### Accessibility UI test
+
+The `FleetAccessibility` scheme checks that core controls can be found and
+activated by accessibility identifier against a temporary daemon and real
+`/bin/sh` sessions. No installed coding-agent CLI is required. It covers sidebar
+selection (including an agent-reported title change), preset selection, session
+creation, tab selection and closing, pane containers, splitting, stopping,
+Changes/Terminal switching, and error-toast dismissal. macOS CI runs this test
+after `scripts/verify.sh`.
+
+```sh
+cargo build -p fleet-daemon --locked
+xcodebuild \
+  -project apps/macos/Fleet.xcodeproj \
+  -scheme FleetAccessibility \
+  -destination 'platform=macOS' \
+  -derivedDataPath apps/macos/.build \
+  -skipPackagePluginValidation \
+  -skipMacroValidation \
+  test CODE_SIGN_IDENTITY=-
+```
+
+Run on a Mac with an active desktop session and allow Xcode's test runner to
+control the interface if macOS prompts. The `UITesting` configuration uses
+`dev.fleet.macos.uitesting`, separate from the normal app's bundle identifier,
+so tests do not alter Fleet's preferences. The app and daemon also get private
+`TMPDIR`, `HOME`, and `ZDOTDIR` directories, keeping MCP files and login-shell
+configuration separate from normal sessions. Only the UI-test runner disables
+Xcode's default test sandbox, to create its temporary daemon and PTYs; the
+shipping app's build settings are unchanged. The test shuts down the daemon
+and removes its temporary project during teardown, including on assertion
+failure. Screenshots and daemon logs are retained on failure in the `.xcresult`
+bundle under `apps/macos/.build/Logs/Test`; CI uploads those bundles.
+
+Identifiers are namespaced by surface. Dynamic identifiers use daemon session,
+pane, or tab IDs—not titles, array positions, or current status:
+
+| Surface | Identifier |
+| --- | --- |
+| Sidebar New agent | `sidebar.new-agent` |
+| Sidebar session / hover Stop / hover Delete | `sidebar.session.<session-id>` / `sidebar.stop.<session-id>` / `sidebar.delete.<session-id>` |
+| Pane container / New agent | `workspace.pane.<pane-id>` / `workspace.new-agent.<pane-id>` |
+| Tab / Close tab | `workspace.tab.<tab-id>` / `workspace.close-tab.<tab-id>` |
+| Split menu command / picker choice | `workspace.split` / `split.session.<session-id>` |
+| Stop menu command / confirmation | `session.stop` / `session.stop.confirm` |
+| Agent preset | `new-agent.preset.<preset-id>` |
+| New-agent fields | `new-agent.program`, `new-agent.name`, `new-agent.directory` |
+| Create / Cancel / directory chooser | `new-agent.create`, `new-agent.cancel`, `new-agent.choose-directory` |
+| Context panel / visibility toggle | `context.panel` / `workspace.toggle-context` |
+| Context modes / mode actions | `context.changes`, `context.terminal`, `context.show-changes`, `context.show-terminal` |
+| Error toast / title / dismissal | `notice.error`, `notice.error.title`, `notice.error.dismiss` |
+
+Pane and context containers preserve their accessible children. Query containers
+with `app.descendants(matching: .any)` rather than assuming they are buttons.
+SwiftUI does not forward command-button identifiers to macOS menus, so
+`AppDelegate` identifies the native Split and Stop menu items when tracking
+begins. Cancel controls also use `split.cancel` and `session.stop.cancel`.
+The test hides the context panel while exercising tab controls, then restores
+it for mode switching. Before testing, CI runs
+`swift apps/macos/scripts/prepare-ui-test-desktop.swift` to select a supported
+desktop mode of at least 1440×900; the runner's default 1024×768 desktop clips
+Fleet's minimum-width window. This helper selects a desktop-usable mode only
+when needed and keeps it for the login session, so it persists into the separate
+UI-test step without changing permanent display preferences. Run it only on a
+dedicated test desktop.
+
 The prototype was exercised in the running app with Claude Code 2.1.311 and
 Gemini CLI 0.46.0 on macOS 27:
 

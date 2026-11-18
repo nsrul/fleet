@@ -36,6 +36,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? AppAppearance.light.rawValue
         NSApplication.shared.appearance = (AppAppearance(rawValue: raw) ?? .light).nsAppearance
         NSApplication.shared.activate(ignoringOtherApps: true)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(identifyMenuCommands(_:)),
+            name: NSMenu.didBeginTrackingNotification, object: nil
+        )
+    }
+
+    @objc private func identifyMenuCommands(_ notification: Notification) {
+        // Tracking begins on the menu bar; its commands live in submenus.
+        if let menu = NSApp.mainMenu { identifyCommands(in: menu) }
+        if let menu = notification.object as? NSMenu { identifyCommands(in: menu) }
+    }
+
+    private func identifyCommands(in menu: NSMenu) {
+        // SwiftUI command buttons do not forward accessibilityIdentifier to NSMenuItem.
+        for item in menu.items {
+            switch item.title {
+            case "Split Pane…": item.setAccessibilityIdentifier("workspace.split")
+            case "Stop Session…": item.setAccessibilityIdentifier("session.stop")
+            default: break
+            }
+            if let submenu = item.submenu { identifyCommands(in: submenu) }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
