@@ -248,6 +248,25 @@ async fn attach(client: &mut Client, id: &str) -> (AttachedSession, Output) {
     (attached, output)
 }
 
+/// Reads until the daemon closes the connection. Every wait is bounded, so a
+/// connection the daemon should have dropped fails instead of hanging.
+async fn drain_until_closed(client: &mut Client) -> Vec<ServerMessage> {
+    let deadline = Instant::now() + WAIT_LIMIT;
+    let mut messages = Vec::new();
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        assert!(
+            !remaining.is_zero(),
+            "timed out waiting for the daemon to close the connection"
+        );
+        match tokio::time::timeout(remaining, client.try_receive()).await {
+            Ok(Ok(Some(message))) => messages.push(message),
+            Ok(Ok(None)) | Ok(Err(_)) => return messages,
+            Err(_) => panic!("timed out waiting for the daemon to close the connection"),
+        }
+    }
+}
+
 async fn collect_until(client: &mut Client, output: &mut Output, needle: &str) -> String {
     let deadline = Instant::now() + WAIT_LIMIT;
     loop {
@@ -303,6 +322,27 @@ fn shutdown_daemon(daemon: &mut Daemon) {
     let stopped = daemon.log(deadline);
     assert_eq!(stopped["event"], "stopped");
     assert!(daemon.exited(deadline).success());
+    daemon.assert_output_finished();
+}
+
+/// Shuts down a daemon that still has a client which stopped reading. Its
+/// writer cannot drain, which the daemon reports, and that line may land on
+/// either side of the shutdown events.
+fn shutdown_daemon_with_a_stalled_writer(daemon: &mut Daemon) {
+    daemon.signal(libc::SIGTERM);
+    let deadline = Instant::now() + WAIT_LIMIT;
+    let mut requested = false;
+    loop {
+        let line = daemon.log(deadline);
+        match line["event"].as_str().unwrap_or_default() {
+            "writer_drain_timed_out" => {}
+            "shutdown_requested" if !requested => requested = true,
+            "stopped" if requested => break,
+            other => panic!("unexpected daemon log during shutdown: {other}"),
+        }
+    }
+    assert!(daemon.exited(deadline).success());
+    assert!(!daemon.socket_path().exists());
     daemon.assert_output_finished();
 }
 
@@ -679,6 +719,184 @@ async fn a_duplicate_attach_is_rejected_and_detaching_resynchronizes() {
 }
 
 #[tokio::test]
+async fn detaching_stops_the_stream_and_replay_covers_the_gap() {
+    let mut daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+
+    client
+        .request(create_session(
+            "detach",
+            r#"printf 'one\n'; sleep 1; printf 'two\n'; sleep 30"#,
+        ))
+        .await
+        .expect("create a session");
+
+    let (_, mut output) = attach(&mut client, "detach").await;
+    collect_until(&mut client, &mut output, "one").await;
+
+    client
+        .request(Command::DetachSession {
+            id: "detach".into(),
+        })
+        .await
+        .expect("detach the session");
+
+    // A second detach is a clear error rather than a silent acknowledgement.
+    let error = client
+        .request(Command::DetachSession {
+            id: "detach".into(),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::NotAttached);
+
+    // Let the session print while nothing is attached. The pump belongs to the
+    // detached stream, so the connection has to stay quiet.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    match tokio::time::timeout(Duration::from_millis(300), client.try_receive()).await {
+        Err(_) => {}
+        Ok(message) => panic!("the detached stream must stop, got {message:?}"),
+    }
+
+    // Attaching again replays what was printed in the gap.
+    let (attached, replay) = attach(&mut client, "detach").await;
+    let text = replay.text();
+    assert!(text.contains("one"), "{text:?}");
+    assert!(
+        text.contains("two"),
+        "the replay must cover output from the detached window: {text:?}"
+    );
+    assert!(
+        attached.output.next_seq >= 2,
+        "the replay must continue the session sequence, not restart it: {}",
+        attached.output.next_seq
+    );
+
+    client
+        .request(Command::StopSession {
+            id: "detach".into(),
+        })
+        .await
+        .expect("stop the session");
+
+    shutdown_daemon(&mut daemon);
+}
+
+#[tokio::test]
+async fn a_client_that_stops_reading_is_cut_off_and_can_attach_again() {
+    let mut daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut slow = Client::connect(daemon.socket_path()).await;
+    slow.hello().await;
+
+    // More output than the per-session retention, the socket buffer, and the
+    // per-client outbound queue can hold together.
+    slow.request(create_session(
+        "flood",
+        r#"head -c 12000000 /dev/zero | tr '\0' 'x'; printf '\nAFTER-FLOOD\n'; sleep 30"#,
+    ))
+    .await
+    .expect("create a session");
+    let _ = attach(&mut slow, "flood").await;
+
+    // Stop reading so the daemon's bounded queue fills.
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let messages = drain_until_closed(&mut slow).await;
+    for message in &messages {
+        match message {
+            ServerMessage::Event {
+                event:
+                    Event::Output { .. }
+                    | Event::Status { .. }
+                    | Event::SessionsChanged
+                    | Event::WorkspaceChanged { .. },
+            } => {}
+            ServerMessage::Rejected { error } => assert_eq!(error.code, ErrorCode::SlowClient),
+            other => panic!("unexpected message for a slow client: {other:?}"),
+        }
+    }
+    drop(slow);
+
+    // The daemon keeps running and a fresh connection can attach to the same
+    // session, reading the retained tail and then live output.
+    assert!(
+        daemon.is_running(),
+        "a slow client must not stop the daemon"
+    );
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+    let (attached, mut output) = attach(&mut client, "flood").await;
+    assert!(
+        attached.output.truncated,
+        "the flood is larger than the retained output"
+    );
+    let text = collect_until(&mut client, &mut output, "AFTER-FLOOD").await;
+    assert!(text.contains("AFTER-FLOOD"), "{text:?}");
+
+    client
+        .request(Command::StopSession { id: "flood".into() })
+        .await
+        .expect("stop the session");
+
+    shutdown_daemon_with_a_stalled_writer(&mut daemon);
+}
+
+#[tokio::test]
+async fn stopping_an_attached_session_reports_the_exit_and_releases_the_session() {
+    let mut daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+
+    client
+        .request(create_session("stopme", r#"printf 'ready\n'; sleep 30"#))
+        .await
+        .expect("create a session");
+    let (_, mut output) = attach(&mut client, "stopme").await;
+    collect_until(&mut client, &mut output, "ready").await;
+
+    let exit = expect_exit(
+        client
+            .request(Command::StopSession {
+                id: "stopme".into(),
+            })
+            .await
+            .expect("stop the session"),
+    );
+
+    // The attachment learns about the exit while it is still attached, and
+    // reports the same exit the request returned.
+    let status = wait_for_status(&mut client, &mut output, "stopme").await;
+    assert_eq!(status, SessionStatus::Exited(exit));
+
+    // An exited session can still be detached and removed, and the id stops
+    // resolving once it is gone.
+    client
+        .request(Command::DetachSession {
+            id: "stopme".into(),
+        })
+        .await
+        .expect("detach the exited session");
+    client
+        .request(Command::RemoveSession {
+            id: "stopme".into(),
+        })
+        .await
+        .expect("remove the exited session");
+    let error = client
+        .request(Command::AttachSession {
+            id: "stopme".into(),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::SessionNotFound);
+
+    shutdown_daemon(&mut daemon);
+}
+
+#[tokio::test]
 async fn a_session_reports_its_launch_arguments_and_environment() {
     let daemon = Daemon::spawn(None);
     daemon.wait_ready();
@@ -963,6 +1181,67 @@ async fn shutdown_notifies_attached_clients_and_removes_the_socket() {
     let stopped = daemon.log(shutdown_deadline);
     assert_eq!(stopped["event"], "stopped");
     assert!(daemon.exited(shutdown_deadline).success());
+    assert!(!daemon.socket_path().exists());
+    daemon.assert_output_finished();
+}
+
+#[tokio::test]
+async fn shutting_down_while_clients_attach_is_clean() {
+    let mut daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut setup = Client::connect(daemon.socket_path()).await;
+    setup.hello().await;
+    setup
+        .request(create_session("race", r#"printf 'ready\n'; sleep 30"#))
+        .await
+        .expect("create a session");
+
+    // Three connections send attach and never wait for the reply. Shutdown
+    // lands in the middle of the attach path on a loaded host.
+    let mut clients = Vec::new();
+    for _ in 0..3 {
+        let mut client = Client::connect(daemon.socket_path()).await;
+        client.hello().await;
+        client
+            .send(ClientMessage::Request {
+                request_id: 2,
+                command: Command::AttachSession { id: "race".into() },
+            })
+            .await;
+        clients.push(client);
+    }
+    daemon.signal(libc::SIGTERM);
+
+    let mut saw_stopping = false;
+    for mut client in clients {
+        for message in drain_until_closed(&mut client).await {
+            match message {
+                ServerMessage::Response { .. } => {}
+                ServerMessage::Event {
+                    event: Event::Output { .. } | Event::Status { .. },
+                } => {}
+                ServerMessage::Event {
+                    event: Event::DaemonStopping,
+                } => saw_stopping = true,
+                ServerMessage::Event {
+                    event: Event::SessionsChanged | Event::WorkspaceChanged { .. },
+                } => {}
+                other => panic!("unexpected message while shutting down: {other:?}"),
+            }
+        }
+    }
+    assert!(
+        saw_stopping,
+        "a client racing the shutdown must be told the daemon is stopping"
+    );
+
+    // A clean exit means no task panicked while attach was in flight.
+    let deadline = Instant::now() + WAIT_LIMIT;
+    let requested = daemon.log(deadline);
+    assert_eq!(requested["event"], "shutdown_requested");
+    let stopped = daemon.log(deadline);
+    assert_eq!(stopped["event"], "stopped");
+    assert!(daemon.exited(deadline).success());
     assert!(!daemon.socket_path().exists());
     daemon.assert_output_finished();
 }
