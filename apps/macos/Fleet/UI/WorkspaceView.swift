@@ -468,7 +468,6 @@ struct TabGrabber: NSViewRepresentable {
     var program: String?
     var onClick: () -> Void
     var onDoubleClick: () -> Void
-    var onHover: (Bool) -> Void
     var onReceive: (TabDrag?) -> Bool
     var onDragStart: (TabDrag) -> Void
     var onDragEnd: (TabDrag) -> Void
@@ -491,7 +490,6 @@ struct TabGrabber: NSViewRepresentable {
         coordinator.program = program
         coordinator.onClick = onClick
         coordinator.onDoubleClick = onDoubleClick
-        coordinator.onHover = onHover
         coordinator.onReceive = onReceive
         coordinator.onDragStart = onDragStart
         coordinator.onDragEnd = onDragEnd
@@ -505,7 +503,6 @@ struct TabGrabber: NSViewRepresentable {
         var program: String?
         var onClick: () -> Void = {}
         var onDoubleClick: () -> Void = {}
-        var onHover: (Bool) -> Void = { _ in }
         var onReceive: (TabDrag?) -> Bool = { _ in false }
         var onDragStart: (TabDrag) -> Void = { _ in }
         var onDragEnd: (TabDrag) -> Void = { _ in }
@@ -516,7 +513,6 @@ final class TabGrabNSView: NSView, NSDraggingSource {
     weak var coordinator: TabGrabber.Coordinator?
     private var origin: NSPoint?
     private var moved = false
-    private var hoverArea: NSTrackingArea?
 
     override var mouseDownCanMoveWindow: Bool { false }
 
@@ -542,27 +538,6 @@ final class TabGrabNSView: NSView, NSDraggingSource {
         default:
             return self
         }
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        hoverArea = area
-        addTrackingArea(area)
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        MainActor.assumeIsolated { coordinator?.onHover(true) }
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        MainActor.assumeIsolated { coordinator?.onHover(false) }
     }
 
     override func mouseDown(with event: NSEvent) {

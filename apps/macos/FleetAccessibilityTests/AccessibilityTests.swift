@@ -122,9 +122,21 @@ final class AccessibilityTests: XCTestCase {
         try await waitForWorkspace(client) { $0.focusedPane?.activeTabID == "first-tab" }
         element("workspace.tab.second-tab", in: app).click()
         try await waitForWorkspace(client) { $0.focusedPane?.activeTabID == "second-tab" }
+        let secondTab = element("workspace.tab.second-tab", in: app)
+        firstTab.hover()
+        let inactiveClose = app.buttons["workspace.close-tab.first-tab"]
+        XCTAssertTrue(inactiveClose.waitForExistence(timeout: 5))
+        inactiveClose.hover()
+        XCTAssertTrue(inactiveClose.exists, "Close must stay visible when the pointer leaves the drag view")
+        secondTab.hover()
         let closeTab = app.buttons["workspace.close-tab.second-tab"]
+        XCTAssertTrue(closeTab.waitForExistence(timeout: 5))
         XCTAssertEqual(closeTab.label, "Close Renamed shell")
+        XCTAssertFalse(secondTab.buttons["workspace.close-tab.second-tab"].exists,
+                       "Tab activation and Close must be sibling accessibility controls")
+        XCTAssertTrue(closeTab.isHittable)
         closeTab.click()
+        XCTAssertTrue(wait(secondTab, matching: NSPredicate(format: "exists == false")), app.debugDescription)
         try await waitForWorkspace(client) { $0.focusedPane?.tabs.count == 1 }
         secondRow.click()
         try await waitForWorkspace(client) { $0.focusedPane?.tabs.count == 2 }
@@ -245,14 +257,22 @@ final class AccessibilityTests: XCTestCase {
         field.typeText(text)
     }
 
+    private enum FixtureError: Error {
+        case workspaceTimeout
+    }
+
     private func waitForWorkspace(
-        _ client: FleetClient, matching predicate: (Workspace) -> Bool
+        _ client: FleetClient, file: StaticString = #filePath, line: UInt = #line,
+        matching predicate: (Workspace) -> Bool
     ) async throws {
+        var workspace = try await client.getWorkspace()
         for _ in 0..<100 {
-            if predicate(try await client.getWorkspace()) { return }
+            if predicate(workspace) { return }
             try await Task.sleep(for: .milliseconds(50))
+            workspace = try await client.getWorkspace()
         }
-        XCTFail("Workspace did not reflect the UI action")
+        XCTFail("Workspace did not reflect the UI action: \(workspace)", file: file, line: line)
+        throw FixtureError.workspaceTimeout
     }
 
     private func stop(_ process: Process) {
