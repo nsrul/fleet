@@ -19,6 +19,7 @@
 		34206BC65CD9FC00F732384B /* Fleet.icns in Resources */ = {isa = PBXBuildFile; fileRef = D4C8FC928C7647044BAFEB21 /* Fleet.icns */; };
 		3718DE84C778244F8EFD4F23 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7057DA52D27913E1D3526C /* ConnectionView.swift */; };
 		46814482FB1A7748AA9559F8 /* GitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8077A6471D75FC1652EB1D51 /* GitService.swift */; };
+		46FB8163D3E9411C010AA3A3 /* AgentChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAB72E62F2A153EB2D72A54 /* AgentChoice.swift */; };
 		471AE2481334B1041BC4E1B0 /* TerminalDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0019E096F9C79D99A6F9D83 /* TerminalDrop.swift */; };
 		4D7D342C912B6E48CDBA5766 /* AgentCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC857938EA7118BD4594A321 /* AgentCatalog.swift */; };
 		5F0CF8BA4DBC006F8FE5E3FE /* TerminalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA8A45647CE4DC7AC70CDE5D /* TerminalController.swift */; };
@@ -52,6 +53,7 @@
 		17219B7EC0DB7FBCAD7F59AC /* ContextTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextTerminalView.swift; sourceTree = "<group>"; };
 		1A1B6F64E7A3960A31BBFFD9 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		1BB9E41730C985DF8E35BC16 /* SettingsPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPanes.swift; sourceTree = "<group>"; };
+		1EAB72E62F2A153EB2D72A54 /* AgentChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentChoice.swift; sourceTree = "<group>"; };
 		2298059FCBC8F72129CD5079 /* TerminalTitle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTitle.swift; sourceTree = "<group>"; };
 		27FFEB46B0D2CFEDE44474AC /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
 		2CE1CF52BE4D30DC72816827 /* FleetKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = FleetKit; path = FleetKit; sourceTree = SOURCE_ROOT; };
@@ -121,6 +123,7 @@
 			isa = PBXGroup;
 			children = (
 				BC857938EA7118BD4594A321 /* AgentCatalog.swift */,
+				1EAB72E62F2A153EB2D72A54 /* AgentChoice.swift */,
 				142F8FCE83D842FE3E198AB8 /* CodexControlSocket.swift */,
 				85343EA7A7BA41C4E21E7957 /* DaemonLauncher.swift */,
 				8077A6471D75FC1652EB1D51 /* GitService.swift */,
@@ -307,6 +310,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D7D342C912B6E48CDBA5766 /* AgentCatalog.swift in Sources */,
+				46FB8163D3E9411C010AA3A3 /* AgentChoice.swift in Sources */,
 				CBC4AE6FF0107F9397EB76F6 /* AppModel.swift in Sources */,
 				E8FC78546D2DEA600449215E /* ClaudePreview.swift in Sources */,
 				13109FC54396304226554F05 /* CodexControlSocket.swift in Sources */,

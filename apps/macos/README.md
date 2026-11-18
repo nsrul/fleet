@@ -173,7 +173,9 @@ scroll keys or `Page Up` / `Page Down` in that state.
   (falling back to the session ID), focus, and status.
 - Context panel that follows the focused agent's working tree, shows the diff
   for the file the agent just changed, and can open a shell for Helix.
-- New-agent sheet with agent presets, working directory, and optional name.
+- New-agent sheet with agent presets, working directory, and optional name. It
+  opens on the agent installed here that last started a session, and tiles for
+  agents this Mac does not have are marked as not installed.
 - Settings for appearance, terminal font, cursor, spacing, and scrollback,
   the keyboard-split direction, stop confirmation, the new-agent folder, the socket path,
   and daemon auto-start.

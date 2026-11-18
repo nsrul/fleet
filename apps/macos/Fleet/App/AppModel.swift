@@ -203,7 +203,20 @@ final class AppModel {
     private(set) var activeSessionIDs: Set<String> = []
     /// Sessions that rang the bell and have not been touched since.
     private(set) var attentionSessionIDs: Set<String> = []
-    var showNewAgent = false
+    var showNewAgent = false {
+        didSet {
+            guard showNewAgent, !oldValue else { return }
+            // Look for installed agents when the sheet opens, not while it is
+            // presented: the result only changes when the user installs one.
+            agentAvailability = AgentCatalog.availability()
+        }
+    }
+    /// Preset ids the New Agent sheet can launch on this machine.
+    private(set) var agentAvailability: Set<String> = []
+    /// Preset that last started a session. Empty until one has.
+    var lastAgentPresetID: String = "" {
+        didSet { store(lastAgentPresetID, forKey: Self.lastAgentPresetKey) }
+    }
     var pendingStopID: String?
     var errorNotice: UserNotice?
     var isStartingDaemon = false
@@ -334,6 +347,7 @@ final class AppModel {
     private static let confirmStopKey = "fleet.confirmStop"
     private static let pinnedDirectoryKey = "fleet.pinnedWorkingDirectory"
     private static let panelScratchKey = "fleet.panelScratchID"
+    private static let lastAgentPresetKey = "fleet.lastAgentPreset"
     static let keptTabsKey = "fleet.keptWorkspaceTabs"
     static let exitGrace: TimeInterval = 30
     /// Automatic resynchronization attempts allowed inside ``streamRecoveryWindow``
@@ -362,6 +376,7 @@ final class AppModel {
         }
         confirmStop = defaults.object(forKey: Self.confirmStopKey) as? Bool ?? true
         pinnedWorkingDirectory = defaults.string(forKey: Self.pinnedDirectoryKey) ?? ""
+        lastAgentPresetID = defaults.string(forKey: Self.lastAgentPresetKey) ?? ""
         if let stored = defaults.string(forKey: Self.panelScratchKey), !stored.isEmpty {
             panelScratchID = stored
         }

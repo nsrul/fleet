@@ -5,14 +5,31 @@ struct NewAgentSheet: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var presetID = "claude"
+    @State private var presetID: String?
     @State private var customProgram = ""
     @State private var name = ""
     @State private var cwd = AppModel.defaultWorkingDirectory
     @State private var notice: UserNotice?
     @State private var isCreating = false
 
-    private var preset: AgentPreset { AgentCatalog.preset(for: presetID) }
+    /// The selected tile, or the one the sheet should open on. Availability is
+    /// read when the sheet is presented, so the first choice is an installed
+    /// agent instead of a hardcoded one.
+    private var selectedPresetID: String {
+        presetID ?? AgentChoice.initialPresetID(
+            candidates: AgentPreset.all.map(\.id),
+            available: model.agentAvailability,
+            lastUsed: model.lastAgentPresetID.isEmpty ? nil : model.lastAgentPresetID,
+            customID: AgentPreset.customID
+        ) ?? AgentPreset.all[0].id
+    }
+
+    private var preset: AgentPreset { AgentCatalog.preset(for: selectedPresetID) }
+    /// The custom tile has no program of its own until the user types one.
+    private func isInstalled(_ item: AgentPreset) -> Bool {
+        item.isCustom || model.agentAvailability.contains(item.id)
+    }
+
     private var program: String? {
         preset.isCustom
             ? AgentCatalog.resolveProgram(customProgram)
@@ -129,7 +146,9 @@ struct NewAgentSheet: View {
     }
 
     private func presetTile(_ item: AgentPreset) -> some View {
-        let selected = presetID == item.id
+        let selected = selectedPresetID == item.id
+        let installed = isInstalled(item)
+        let tint = selected ? Palette.accent : (installed ? Color.primary : Color.secondary)
         return Button {
             presetID = item.id
             notice = nil
@@ -137,16 +156,25 @@ struct NewAgentSheet: View {
             HStack(spacing: 8) {
                 AgentMark(preset: item)
                     .frame(width: 16, height: 16)
-                Text(item.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                    .foregroundStyle(selected ? Palette.accent : Color.primary)
+                    .opacity(installed ? 1 : 0.4)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .foregroundStyle(tint)
+                    if !installed {
+                        Text("Not installed")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 36)
-            .foregroundStyle(selected ? Palette.accent : Color.primary)
+            .foregroundStyle(tint)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(selected ? Palette.accent.opacity(0.10) : Color.primary.opacity(0.04))
@@ -155,6 +183,14 @@ struct NewAgentSheet: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .help(helpText(for: item, installed: installed))
+    }
+
+    private func helpText(for item: AgentPreset, installed: Bool) -> String {
+        if !installed {
+            return "\(item.title) was not found in PATH."
+        }
+        return item.isCustom ? "Type the path to an executable." : item.binary
     }
 
     @ViewBuilder
@@ -217,6 +253,9 @@ struct NewAgentSheet: View {
                     cwd: expanded,
                     requestedName: name
                 )
+                if !preset.isCustom {
+                    model.lastAgentPresetID = preset.id
+                }
                 dismiss()
             } catch {
                 notice = AgentNotices.explain(

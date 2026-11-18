@@ -8,6 +8,8 @@ struct AgentPreset: Identifiable, Equatable, Sendable {
     let arguments: [String]
     let symbol: String
 
+    static let customID = "custom"
+
     static let all: [AgentPreset] = [
         AgentPreset(id: "claude", title: "Claude Code", binary: "claude", arguments: [], symbol: "sparkles"),
         AgentPreset(id: "codex", title: "Codex", binary: "codex", arguments: [], symbol: "terminal"),
@@ -15,10 +17,10 @@ struct AgentPreset: Identifiable, Equatable, Sendable {
         AgentPreset(id: "gemini", title: "Gemini CLI", binary: "gemini", arguments: [], symbol: "diamond"),
         AgentPreset(id: "opencode", title: "OpenCode", binary: "opencode", arguments: [], symbol: "chevron.left.forwardslash.chevron.right"),
         AgentPreset(id: "shell", title: "Shell", binary: "/bin/zsh", arguments: ["-l"], symbol: "terminal"),
-        AgentPreset(id: "custom", title: "Custom…", binary: "", arguments: [], symbol: "ellipsis"),
+        AgentPreset(id: customID, title: "Custom…", binary: "", arguments: [], symbol: "ellipsis"),
     ]
 
-    var isCustom: Bool { id == "custom" }
+    var isCustom: Bool { id == Self.customID }
 }
 
 enum AgentCatalog {
@@ -89,6 +91,14 @@ enum AgentCatalog {
         return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
             && !isDirectory.boolValue
             && FileManager.default.isExecutableFile(atPath: path)
+    }
+
+    /// Preset ids whose program this machine can run. The custom tile is
+    /// listed: it has no program of its own, so it is never "missing".
+    static func availability() -> Set<String> {
+        Set(AgentPreset.all.compactMap { preset in
+            preset.isCustom || resolveProgram(preset.binary) != nil ? preset.id : nil
+        })
     }
 
     static var pluginPresets: [PluginPreset] {
