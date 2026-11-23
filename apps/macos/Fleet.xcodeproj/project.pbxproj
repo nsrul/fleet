@@ -14,6 +14,7 @@
 		107665118E830BB088836256 /* FleetAPI in Frameworks */ = {isa = PBXBuildFile; productRef = BE57F7AE00F4C8C72AE3A232 /* FleetAPI */; };
 		13109FC54396304226554F05 /* CodexControlSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 142F8FCE83D842FE3E198AB8 /* CodexControlSocket.swift */; };
 		1EAE0C08A2AFF2B6A92722B9 /* ContextPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 484119FE72EF462E66228A49 /* ContextPanelView.swift */; };
+		1FDB1EDE9AE8DD50AB67CD58 /* AgentDesktopCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D4E40B44AD01659F153E87 /* AgentDesktopCommand.swift */; };
 		26745FF90D096984AFE879EB /* TerminalFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0BE833F68BC553546DA2BF /* TerminalFont.swift */; };
 		2A49A621CAB067CDDAAE3100 /* WorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA8D3444CF4AE87788433D32 /* WorkspaceModel.swift */; };
 		2BEB17A9980A7937CD4DBC7F /* DaemonLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85343EA7A7BA41C4E21E7957 /* DaemonLauncher.swift */; };
@@ -87,6 +88,7 @@
 		BC857938EA7118BD4594A321 /* AgentCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCatalog.swift; sourceTree = "<group>"; };
 		BE8737718697F74387370A71 /* FleetDark.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = FleetDark.icns; sourceTree = "<group>"; };
 		C329FAEED4F1EDF600180595 /* FleetApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetApp.swift; sourceTree = "<group>"; };
+		C7D4E40B44AD01659F153E87 /* AgentDesktopCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopCommand.swift; sourceTree = "<group>"; };
 		CF9999C19AD118E18E796F39 /* PanelLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLayout.swift; sourceTree = "<group>"; };
 		D09011A40F3BE078C4A1C838 /* TerminalPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalPaneView.swift; sourceTree = "<group>"; };
 		D4C8FC928C7647044BAFEB21 /* Fleet.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Fleet.icns; sourceTree = "<group>"; };
@@ -148,6 +150,7 @@
 			children = (
 				BC857938EA7118BD4594A321 /* AgentCatalog.swift */,
 				1EAB72E62F2A153EB2D72A54 /* AgentChoice.swift */,
+				C7D4E40B44AD01659F153E87 /* AgentDesktopCommand.swift */,
 				142F8FCE83D842FE3E198AB8 /* CodexControlSocket.swift */,
 				85343EA7A7BA41C4E21E7957 /* DaemonLauncher.swift */,
 				8077A6471D75FC1652EB1D51 /* GitService.swift */,
@@ -370,6 +373,7 @@
 			files = (
 				4D7D342C912B6E48CDBA5766 /* AgentCatalog.swift in Sources */,
 				46FB8163D3E9411C010AA3A3 /* AgentChoice.swift in Sources */,
+				1FDB1EDE9AE8DD50AB67CD58 /* AgentDesktopCommand.swift in Sources */,
 				CBC4AE6FF0107F9397EB76F6 /* AppModel.swift in Sources */,
 				E8FC78546D2DEA600449215E /* ClaudePreview.swift in Sources */,
 				13109FC54396304226554F05 /* CodexControlSocket.swift in Sources */,

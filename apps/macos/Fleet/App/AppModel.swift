@@ -724,6 +724,15 @@ final class AppModel {
             await loadWorkspace()
             await syncOpenAttachments()
             startGitLoop()
+            if agentDesktopEnabled {
+                AgentDesktop.pruneHomes(
+                    root: AgentDesktop.defaultRoot(),
+                    keeping: Set(sessions.filter(\.isRunning).map(\.id))
+                )
+                Task { [weak self] in
+                    await self?.checkAgentDesktopPermissions()
+                }
+            }
         } catch {
             await client.disconnect()
             self.client = nil
@@ -932,6 +941,9 @@ final class AppModel {
     }
 
     private func updateStatus(_ status: SessionStatus, for sessionID: String) {
+        if case .exited = status {
+            releaseAgentDesktopHome(sessionID)
+        }
         controllers[sessionID]?.update(status: status)
         if scratchSession?.id == sessionID, let old = scratchSession {
             scratchSession = SessionInfo(
@@ -989,6 +1001,7 @@ final class AppModel {
 
     private func startPlugin(_ client: FleetClient) {
         guard daemonCapabilities.contains(FleetProtocol.tasksCapability) else { return }
+        let desktop = agentDesktopInstallation()
         do {
             _ = try plugin.start { endpoint in
                 PluginHandler(
@@ -1003,7 +1016,8 @@ final class AppModel {
                     endpoint: endpoint,
                     uniqueSuffix: {
                         UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(8).description
-                    }
+                    },
+                    agentDesktop: desktop
                 )
             }
         } catch {
@@ -1106,6 +1120,7 @@ final class AppModel {
             for id in ids {
                 do {
                     _ = try await client.stopSession(id: id)
+                    releaseAgentDesktopHome(id)
                 } catch {
                     failures.append((id, error))
                 }
@@ -1193,6 +1208,7 @@ final class AppModel {
             do {
                 try await client.removeSession(id: id)
                 removedIDs.insert(id)
+                releaseAgentDesktopHome(id)
             } catch {
                 if removeFailure == nil { removeFailure = (id, error) }
             }
@@ -1245,6 +1261,68 @@ final class AppModel {
         }
     }
 
+    private var agentDesktopEnabled: Bool {
+        ProcessInfo.processInfo.environment[AgentDesktop.skipEnvironmentKey] != "1"
+    }
+
+    /// Nil when the binary is missing, so plugin sessions start unchanged.
+    private func agentDesktopInstallation() -> AgentDesktop.Installation? {
+        guard agentDesktopEnabled, !isPreview else { return nil }
+        guard let binary = AgentCatalog.resolveProgram(AgentDesktop.binaryName) else { return nil }
+        return AgentDesktop.Installation(binary: binary, root: AgentDesktop.defaultRoot())
+    }
+
+    /// Adds the agent-desktop environment when the binary is installed.
+    /// Returns the session id whose home was created, so a failed launch can delete it.
+    private func agentDesktopHome(sessionID: String, into environment: inout [String: String]) -> String? {
+        guard agentDesktopEnabled, !isPreview else { return nil }
+        guard let binary = AgentCatalog.resolveProgram(AgentDesktop.binaryName) else { return nil }
+        let root = AgentDesktop.defaultRoot()
+        guard let launch = AgentDesktop.launch(binary: binary, sessionID: sessionID, root: root) else {
+            return nil
+        }
+        do {
+            try AgentDesktop.prepareHome(at: launch.home)
+        } catch {
+            AgentDesktop.removeHome(sessionID: sessionID, root: root)
+            return nil
+        }
+        environment.merge(launch.environment) { _, fleet in fleet }
+        return sessionID
+    }
+
+    private func releaseAgentDesktopHome(_ sessionID: String) {
+        guard agentDesktopEnabled else { return }
+        AgentDesktop.removeHome(sessionID: sessionID, root: AgentDesktop.defaultRoot())
+    }
+
+    private func checkAgentDesktopPermissions() async {
+        guard agentDesktopEnabled, !isPreview else { return }
+        guard let binary = AgentCatalog.resolveProgram(AgentDesktop.binaryName) else { return }
+        guard let output = await AgentDesktopCommand.output(
+            binary: binary,
+            arguments: AgentDesktop.permissionArguments(guide: false)
+        ), let report = AgentDesktop.parsePermissions(output), report.accessibilityDenied else {
+            return
+        }
+        let guided = await AgentDesktopCommand.output(
+            binary: binary,
+            arguments: AgentDesktop.permissionArguments(guide: true)
+        )
+        let guide = guided.flatMap { AgentDesktop.parsePermissions($0)?.guide }
+        let notice = AgentDesktop.accessibilityNotice(appName: Self.hostAppName, guide: guide)
+        showNotice(UserNotice(notice.title, detail: notice.detail))
+    }
+
+    private static var hostAppName: String {
+        let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? "Fleet"
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.hasPrefix("$(") { return "Fleet" }
+        return trimmed
+    }
+
     @discardableResult
     func createSession(
         program: String,
@@ -1277,6 +1355,7 @@ final class AppModel {
         }
         var launchEnvironment = environment
         launchEnvironment.merge(sessionEnvironment(sessionID: id)) { _, session in session }
+        let desktopHome = agentDesktopHome(sessionID: id, into: &launchEnvironment)
         let spec = CreateSession(
             id: id,
             program: program,
@@ -1285,7 +1364,15 @@ final class AppModel {
             env: pluginSpec.applying(to: launchEnvironment),
             size: size ?? TerminalSize(rows: 24, cols: 80)
         )
-        let session = try await client.createSession(spec)
+        let session: SessionInfo
+        do {
+            session = try await client.createSession(spec)
+        } catch {
+            if let desktopHome {
+                AgentDesktop.removeHome(sessionID: desktopHome, root: AgentDesktop.defaultRoot())
+            }
+            throw error
+        }
         if !trimmedName.isEmpty, trimmedName != Self.slug(trimmedName) {
             sessionNames[session.id] = String(trimmedName.prefix(80))
         }
