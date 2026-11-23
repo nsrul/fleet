@@ -4,6 +4,8 @@ mod signals;
 mod api;
 #[cfg(unix)]
 mod config;
+#[cfg(unix)]
+mod fingerprint;
 
 use std::{env, process::ExitCode, sync::Arc, time::Duration};
 
@@ -46,11 +48,13 @@ async fn run() -> Result<()> {
             .parent()
             .context("the socket path includes a parent directory")?
             .join("workspace.json");
+        let executable_fingerprint = fingerprint::executable_fingerprint();
         let mut api = api::ApiServer::bind(
             &config.socket_path,
             config.private_parent,
             Arc::clone(&engine),
             &workspace_path,
+            executable_fingerprint.clone(),
         )
         .await?;
         info!(
@@ -60,6 +64,7 @@ async fn run() -> Result<()> {
             pid = std::process::id(),
             state = daemon_state(engine.lock().await.state()).as_str(),
             socket = %api.socket_path().display(),
+            executable_fingerprint = %executable_fingerprint,
         );
 
         enum Stop {

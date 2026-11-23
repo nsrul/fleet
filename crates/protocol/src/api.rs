@@ -503,6 +503,11 @@ pub enum ServerMessage {
         engine_state: DaemonState,
         #[serde(default)]
         capabilities: Vec<String>,
+        /// FNV-1a 64 of the executable, captured when the process started.
+        /// Empty when that file could not be read. Omitted on daemons that
+        /// predate the field; those are not this build.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        executable_fingerprint: String,
     },
     Rejected {
         error: ApiError,
@@ -701,6 +706,7 @@ mod tests {
             daemon_version: "0.1.0".into(),
             engine_state: DaemonState::Running,
             capabilities: vec![CAPABILITY_REMOVE_SESSION.into()],
+            executable_fingerprint: String::new(),
         };
         assert_eq!(
             serde_json::to_value(&welcome).unwrap(),
@@ -712,6 +718,33 @@ mod tests {
                 "capabilities": ["remove_session"],
             })
         );
+
+        let identified = ServerMessage::Welcome {
+            protocol_version: PROTOCOL_VERSION,
+            daemon_version: "0.1.0".into(),
+            engine_state: DaemonState::Running,
+            capabilities: Vec::new(),
+            executable_fingerprint: "f775f8a97470ae4f".into(),
+        };
+        let encoded = serde_json::to_value(&identified).unwrap();
+        assert_eq!(encoded["executable_fingerprint"], "f775f8a97470ae4f");
+        assert_eq!(
+            serde_json::from_value::<ServerMessage>(encoded).unwrap(),
+            identified
+        );
+        let legacy = serde_json::json!({
+            "type": "welcome",
+            "protocol_version": 1,
+            "daemon_version": "0.1.0",
+            "engine_state": "running",
+        });
+        match serde_json::from_value::<ServerMessage>(legacy).unwrap() {
+            ServerMessage::Welcome {
+                executable_fingerprint,
+                ..
+            } => assert!(executable_fingerprint.is_empty()),
+            other => panic!("expected a welcome, got {other:?}"),
+        }
     }
 
     #[test]

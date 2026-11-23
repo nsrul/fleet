@@ -14,6 +14,7 @@ final class ClientTests: XCTestCase {
         let welcome = try await client.connect(clientName: "unit-test")
         XCTAssertEqual(welcome.protocolVersion, 1)
         XCTAssertEqual(welcome.daemonVersion, "test")
+        XCTAssertNil(welcome.executableFingerprint)
 
         let sessions = try await client.listSessions()
         XCTAssertEqual(sessions.map(\.id), ["one"])

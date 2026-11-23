@@ -255,17 +255,22 @@ public struct Welcome: Equatable, Sendable {
     public let daemonVersion: String
     public let engineState: String
     public let capabilities: [String]
+    /// FNV-1a 64 of the daemon executable at process start. Nil when the
+    /// daemon predates the field.
+    public let executableFingerprint: String?
 
     public init(
         protocolVersion: UInt32,
         daemonVersion: String,
         engineState: String,
-        capabilities: [String] = []
+        capabilities: [String] = [],
+        executableFingerprint: String? = nil
     ) {
         self.protocolVersion = protocolVersion
         self.daemonVersion = daemonVersion
         self.engineState = engineState
         self.capabilities = capabilities
+        self.executableFingerprint = executableFingerprint
     }
 }
 
@@ -771,6 +776,7 @@ public enum ServerMessage: Decodable, Sendable {
         case daemonVersion = "daemon_version"
         case engineState = "engine_state"
         case capabilities
+        case executableFingerprint = "executable_fingerprint"
         case error
         case requestID = "request_id"
         case result
@@ -790,7 +796,11 @@ public enum ServerMessage: Decodable, Sendable {
                     capabilities: try container.decodeIfPresent(
                         [String].self,
                         forKey: .capabilities
-                    ) ?? []
+                    ) ?? [],
+                    executableFingerprint: try container.decodeIfPresent(
+                        String.self,
+                        forKey: .executableFingerprint
+                    )
                 )
             )
         case "rejected":

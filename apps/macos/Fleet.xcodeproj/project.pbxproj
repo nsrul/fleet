@@ -362,7 +362,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nSRC=\"${SRCROOT}/../../target/release/fleet-daemon\"\nif [ ! -x \"$SRC\" ]; then\n  SRC=\"${SRCROOT}/../../target/debug/fleet-daemon\"\nfi\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nmkdir -p \"$DEST\"\nif [ -x \"$SRC\" ]; then\n  cp \"$SRC\" \"$DEST/fleet-daemon\"\n  chmod +x \"$DEST/fleet-daemon\"\n  echo \"Copied fleet-daemon from $SRC\"\nelse\n  echo \"warning: fleet-daemon is not built; the app will search target/debug and PATH\"\nfi\n";
+			shellScript = "set -e\n# Debug must bundle the debug daemon. A leftover target/release\n# binary would hide the daemon this build just compiled.\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n  SRC=\"${SRCROOT}/../../target/release/fleet-daemon\"\nelse\n  SRC=\"${SRCROOT}/../../target/debug/fleet-daemon\"\n  if [ ! -x \"$SRC\" ]; then\n    SRC=\"${SRCROOT}/../../target/release/fleet-daemon\"\n  fi\nfi\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nmkdir -p \"$DEST\"\nif [ -x \"$SRC\" ]; then\n  cp \"$SRC\" \"$DEST/fleet-daemon\"\n  chmod +x \"$DEST/fleet-daemon\"\n  echo \"Copied fleet-daemon from $SRC\"\nelse\n  echo \"warning: fleet-daemon is not built; the app will search target/debug and PATH\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

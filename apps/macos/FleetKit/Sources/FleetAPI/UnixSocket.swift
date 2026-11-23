@@ -111,6 +111,22 @@ public final class UnixSocket: @unchecked Sendable {
         try writeAll(frame)
     }
 
+    /// Process id of the daemon bound to this socket. Nil when the peer
+    /// cannot be read.
+    func peerProcessID() -> pid_t? {
+        let descriptor: Int32
+        do {
+            descriptor = try currentDescriptor()
+        } catch {
+            return nil
+        }
+        var pid: pid_t = 0
+        var length = socklen_t(MemoryLayout<pid_t>.size)
+        let result = getsockopt(descriptor, SOL_LOCAL, LOCAL_PEERPID, &pid, &length)
+        guard result == 0, pid > 0 else { return nil }
+        return pid
+    }
+
     public func close() {
         writeLock.lock()
         stateLock.lock()

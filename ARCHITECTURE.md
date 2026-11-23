@@ -312,7 +312,7 @@ At the daemon boundary, engine errors map to stable `ErrorCode` values instead o
 - Structured logs may include session ID, program, PID, size, and exit status.
 - Programs are executed directly with explicit arguments; no implicit shell is used.
 - The local socket is owner-only (`0600`), its default parent is private (`0700`), and peers are checked against the daemon user's UID before the handshake.
-- Socket-parent ownership and symlinks are checked; live daemons are not replaced, and stale sockets are removed only after a bounded connect probe.
+- Socket-parent ownership and symlinks are checked. A second daemon does not take over a socket that is still accepting connections. The Mac app stops a listening daemon whose executable fingerprint differs from the binary it would launch, then starts that binary. Stale sockets are removed only after a bounded connect probe.
 - Agent CLIs retain their own authentication and permission systems.
 
 ## 11. Failure handling
@@ -330,6 +330,7 @@ At the daemon boundary, engine errors map to stable `ErrorCode` values instead o
 | Termination signal fails | Reported; shutdown still proceeds within its deadline. |
 | Socket parent is a symlink or owned by another user | Startup fails with a clear configuration error. |
 | Another daemon is listening | Startup fails instead of replacing the live socket. |
+| Listening daemon is not this app's executable | The Mac app stops that daemon, then starts its own. Sessions that daemon owned stop with it. |
 | Socket is stale | Removed after a bounded failed-connect probe. |
 | Handshake missing, late, or version-mismatched | Client is rejected with a stable code; no request is executed. |
 | Frame exceeds 4 MiB | Client is rejected before the body is read. |

@@ -691,6 +691,10 @@ final class AppModel {
         errorNotice = nil
 
         do {
+            if allowAutoStart, autoStartDaemon, !isPreview,
+               let executable = DaemonLauncher.locate() {
+                try await takeOverStaleDaemon(executable: executable)
+            }
             try await openConnection()
         } catch {
             if allowAutoStart, autoStartDaemon, isConnectionFailure(error),
@@ -706,6 +710,25 @@ final class AppModel {
                 return
             }
             connection = .failed(AgentNotices.explainConnection(error, socketPath: socketPath))
+        }
+    }
+
+    /// Stops a daemon that was not started from this build, then starts that build.
+    ///
+    /// Checked once per connection. A daemon that cannot report a fingerprint
+    /// is replaced a single time, then the connection continues.
+    private func takeOverStaleDaemon(executable: String) async throws {
+        switch await DaemonLauncher.handoff(executable: executable, socketPath: socketPath) {
+        case .keep, .absent:
+            return
+        case .unsafe:
+            showNotice(AgentNotices.daemonLeftRunning())
+        case .replace(let pid):
+            isStartingDaemon = true
+            defer { isStartingDaemon = false }
+            try await DaemonLauncher.stop(pid: pid, socketPath: socketPath)
+            try await DaemonLauncher.start(executable: executable, socketPath: socketPath)
+            showNotice(AgentNotices.daemonReplaced())
         }
     }
 

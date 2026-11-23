@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Events streamed by the daemon after a successful handshake.
@@ -33,6 +34,11 @@ public actor FleetClient {
     private var deadlines: [UInt64: Task<Void, Never>] = [:]
     private var readTask: Task<Void, Never>?
     private var closed = false
+
+    /// Process id listening on this socket, before or after the handshake.
+    public nonisolated func peerProcessID() -> pid_t? {
+        socket.peerProcessID()
+    }
 
     public init(path: String, requestTimeout: Duration = FleetClient.defaultRequestTimeout) throws {
         let socket = try UnixSocket.connect(path: path)
