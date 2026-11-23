@@ -164,6 +164,18 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(welcome.daemonVersion, "0.1.0")
         XCTAssertEqual(welcome.engineState, "running")
         XCTAssertTrue(welcome.capabilities.isEmpty)
+        XCTAssertNil(welcome.executableFingerprint)
+    }
+
+    func testWelcomeDecodesExecutableFingerprint() throws {
+        let payload = Data("""
+        {"type":"welcome","protocol_version":1,"daemon_version":"0.1.0","engine_state":"running","executable_fingerprint":"f775f8a97470ae4f"}
+        """.utf8)
+        let message = try FrameCodec.decode(ServerMessage.self, from: payload)
+        guard case .welcome(let welcome) = message else {
+            return XCTFail("expected welcome")
+        }
+        XCTAssertEqual(welcome.executableFingerprint, "f775f8a97470ae4f")
     }
 
     func testWelcomeDecodesCapabilities() throws {

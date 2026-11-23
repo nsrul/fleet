@@ -69,6 +69,7 @@ struct ApiState {
     shutdown: watch::Sender<bool>,
     tasks: TaskBook,
     workspace: WorkspaceBook,
+    executable_fingerprint: String,
 }
 
 impl ApiServer {
@@ -77,6 +78,7 @@ impl ApiServer {
         private_parent: bool,
         engine: Arc<Mutex<Engine>>,
         workspace_path: &Path,
+        executable_fingerprint: String,
     ) -> Result<Self> {
         let listener = LocalListener::bind(path, private_parent).await?;
         let (shutdown, _) = watch::channel(false);
@@ -89,6 +91,7 @@ impl ApiServer {
                 shutdown: shutdown.clone(),
                 tasks: TaskBook::new(),
                 workspace,
+                executable_fingerprint,
             }),
             clients: Arc::new(Semaphore::new(MAX_CLIENTS)),
             connections: JoinSet::new(),
@@ -319,6 +322,7 @@ impl Connection {
                         CAPABILITY_TASKS.to_owned(),
                         CAPABILITY_WORKSPACE.to_owned(),
                     ],
+                    executable_fingerprint: self.state.executable_fingerprint.clone(),
                 })?;
                 debug!(
                     client_id = self.client_id,

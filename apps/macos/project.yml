@@ -61,9 +61,15 @@ targets:
         basedOnDependencyAnalysis: false
         script: |
           set -e
-          SRC="${SRCROOT}/../../target/release/fleet-daemon"
-          if [ ! -x "$SRC" ]; then
+          # Debug must bundle the debug daemon. A leftover target/release
+          # binary would hide the daemon this build just compiled.
+          if [ "$CONFIGURATION" = "Release" ]; then
+            SRC="${SRCROOT}/../../target/release/fleet-daemon"
+          else
             SRC="${SRCROOT}/../../target/debug/fleet-daemon"
+            if [ ! -x "$SRC" ]; then
+              SRC="${SRCROOT}/../../target/release/fleet-daemon"
+            fi
           fi
           DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
           mkdir -p "$DEST"

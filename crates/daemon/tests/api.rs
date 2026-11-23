@@ -55,10 +55,15 @@ impl Client {
                 protocol_version,
                 engine_state,
                 capabilities,
+                executable_fingerprint,
                 ..
             } => {
                 assert_eq!(protocol_version, PROTOCOL_VERSION);
                 assert_eq!(engine_state, fleet_protocol::DaemonState::Running);
+                let expected = fleet_protocol::fnv1a64(
+                    &std::fs::read(env!("CARGO_BIN_EXE_fleet-daemon")).expect("read fleet-daemon"),
+                );
+                assert_eq!(executable_fingerprint, expected);
                 assert!(
                     capabilities
                         .iter()

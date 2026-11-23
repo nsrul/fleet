@@ -86,7 +86,10 @@ The app connects to `~/.fleet/daemon.sock` by default. `FLEET_SOCKET`
 overrides the path. If nothing is listening and auto-start is enabled, the app
 looks for `fleet-daemon` in this order: `FLEET_DAEMON`, the app bundle's
 resources, `target/debug`, `target/release`, `~/.fleet/bin`, Homebrew paths,
-and `PATH`. Daemon logs go to `~/Library/Logs/Fleet/daemon.log`.
+and `PATH`. When a daemon is already listening, the app keeps it only if that
+process started from the same executable. Otherwise it stops that daemon and
+starts the one this build would launch. Sessions the previous daemon owned
+stop with it. Daemon logs go to `~/Library/Logs/Fleet/daemon.log`.
 
 New sessions use the selected working directory. `FLEET_WORKDIR` supplies the
 default when the app starts. The agent picker offers installed CLIs from

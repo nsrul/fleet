@@ -101,6 +101,20 @@ enum AgentNotices {
         )
     }
 
+    static func daemonReplaced() -> UserNotice {
+        UserNotice(
+            "Fleet updated its background process.",
+            detail: "Sessions from the previous daemon have stopped. New sessions use this version."
+        )
+    }
+
+    static func daemonLeftRunning() -> UserNotice {
+        UserNotice(
+            "Fleet is connected to a daemon from another build.",
+            detail: "That process is still running, so this version left it in place. Quit fleet-daemon and open Fleet again."
+        )
+    }
+
     static func daemonBinaryMissing() -> UserNotice {
         UserNotice(
             "No daemon binary was found.",
