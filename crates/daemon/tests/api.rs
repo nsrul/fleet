@@ -1294,6 +1294,164 @@ async fn wait_for_plan(client: &mut Client, id: &str) -> PlanInfo {
 }
 
 #[tokio::test]
+async fn agent_desktop_state_is_private_to_each_spawned_session() {
+    let root = std::env::temp_dir().join(format!(
+        "fleet-agent-desktop-api-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("temp root");
+
+    let daemon = Daemon::spawn(None);
+    daemon.wait_ready();
+    let mut client = Client::connect(daemon.socket_path()).await;
+    client.hello().await;
+    client
+        .request(create_session("parent", "sleep 30"))
+        .await
+        .expect("create the parent");
+
+    let created = expect_session(
+        client
+            .request(desktop_session("desktop", &root, "/usr/bin/true"))
+            .await
+            .expect("create a session with a private home"),
+    );
+    let home = root.join("desktop");
+    assert_eq!(
+        created.env.get("AGENT_DESKTOP_HOME").map(String::as_str),
+        Some(home.to_str().unwrap())
+    );
+    assert_eq!(
+        created
+            .env
+            .get("FLEET_AGENT_DESKTOP_SESSION")
+            .map(String::as_str),
+        Some("desktop")
+    );
+    assert_eq!(
+        created
+            .env
+            .get("FLEET_AGENT_DESKTOP_BIN")
+            .map(String::as_str),
+        Some("/usr/bin/true")
+    );
+    assert!(!created.env.contains_key("FLEET_AGENT_DESKTOP_ROOT"));
+    assert_eq!(directory_mode(&home), 0o700);
+
+    let plan = expect_plan(
+        client
+            .request(Command::PutPlan(PutPlan {
+                parent_id: "parent".into(),
+                steps: vec![desktop_step(&root)],
+            }))
+            .await
+            .expect("start a plan step with a private home"),
+    );
+    let step_id = format!("{}-1", plan.id);
+    let step = expect_session(
+        client
+            .request(Command::InspectSession {
+                id: step_id.clone(),
+            })
+            .await
+            .expect("inspect the plan step"),
+    );
+    let step_home = root.join(&step_id);
+    assert_eq!(
+        step.env.get("AGENT_DESKTOP_HOME").map(String::as_str),
+        Some(step_home.to_str().unwrap())
+    );
+    assert_eq!(
+        step.env
+            .get("FLEET_AGENT_DESKTOP_SESSION")
+            .map(String::as_str),
+        Some(step_id.as_str())
+    );
+    assert_eq!(
+        step.env.get("FLEET_SESSION_ID").map(String::as_str),
+        Some(step_id.as_str())
+    );
+    assert!(!step.env.contains_key("FLEET_AGENT_DESKTOP_ROOT"));
+    assert_eq!(directory_mode(&step_home), 0o700);
+    assert!(!root.join("plan-step").exists());
+
+    let escaped = expect_session(
+        client
+            .request(desktop_session("a/b", &root, "/usr/bin/true"))
+            .await
+            .expect("an id with a slash is still a session"),
+    );
+    assert!(!escaped.env.contains_key("FLEET_AGENT_DESKTOP_BIN"));
+    assert!(!escaped.env.contains_key("AGENT_DESKTOP_HOME"));
+    assert!(!root.join("a").exists());
+
+    let error = client
+        .request(desktop_session(
+            "missing-program",
+            &root,
+            "/no/such/fleet-agent-desktop-program",
+        ))
+        .await
+        .expect_err("a missing program does not spawn");
+    assert_eq!(error.code, ErrorCode::SpawnFailed);
+    assert!(!root.join("missing-program").exists());
+
+    let mut invalid = desktop_step(&root);
+    invalid.env.insert("A=B".into(), "nope".into());
+    let error = client
+        .request(Command::PutPlan(PutPlan {
+            parent_id: "parent".into(),
+            steps: vec![invalid],
+        }))
+        .await
+        .expect_err("an invalid step is rejected before it spawns");
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    assert!(!root.join("plan-step").exists());
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+fn desktop_session(id: &str, root: &Path, program: &str) -> Command {
+    let mut command = create_session(id, "true");
+    let Command::CreateSession(request) = &mut command else {
+        unreachable!();
+    };
+    request.program = program.into();
+    request.args.clear();
+    request.env = BTreeMap::from([
+        ("FLEET_AGENT_DESKTOP_BIN".into(), "/usr/bin/true".into()),
+        (
+            "FLEET_AGENT_DESKTOP_ROOT".into(),
+            root.to_string_lossy().into_owned(),
+        ),
+    ]);
+    command
+}
+
+fn desktop_step(root: &Path) -> PlanStepSpec {
+    let mut step = step("/usr/bin/true");
+    step.env
+        .insert("FLEET_AGENT_DESKTOP_BIN".into(), "/usr/bin/true".into());
+    step.env.insert(
+        "FLEET_AGENT_DESKTOP_ROOT".into(),
+        root.to_string_lossy().into_owned(),
+    );
+    step
+}
+
+fn directory_mode(path: &Path) -> u32 {
+    std::fs::symlink_metadata(path)
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777
+}
+
+#[tokio::test]
 async fn a_plan_runs_the_next_step_after_a_successful_exit() {
     let daemon = Daemon::spawn(None);
     daemon.wait_ready();

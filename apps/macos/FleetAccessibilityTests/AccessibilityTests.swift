@@ -88,6 +88,7 @@ final class AccessibilityTests: XCTestCase {
         app.launchEnvironment["FLEET_SOCKET"] = socket
         app.launchEnvironment["FLEET_WORKDIR"] = project.path
         app.launchEnvironment["FLEET_PREVIEW"] = "0"
+        app.launchEnvironment[AgentDesktop.skipEnvironmentKey] = "1"
         app.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "-fleet.autoStartDaemon", "NO"]
         app.launch()
         registerCleanup { [self] in

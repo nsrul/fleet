@@ -31,8 +31,8 @@ public enum SessionFork {
     }
 
     /// Environment the session needs that Fleet does not own. The terminal
-    /// variables, the session ID, and the plugin configuration are rebuilt for
-    /// the new session.
+    /// variables, the session ID, the agent-desktop directory, and the plugin
+    /// configuration are rebuilt for the new session.
     public static func environment(_ env: [String: String]) -> [String: String] {
         env.filter { key, _ in
             !key.hasPrefix("FLEET_") && !reservedEnvironmentKeys.contains(key)
@@ -42,6 +42,7 @@ public enum SessionFork {
     private static let reservedEnvironmentKeys: Set<String> = [
         "TERM",
         "COLORTERM",
+        AgentDesktop.homeEnvironmentKey,
         FleetPluginFiles.geminiSystemSettingsEnvironmentKey,
         FleetPluginFiles.opencodeConfigEnvironmentKey,
     ]

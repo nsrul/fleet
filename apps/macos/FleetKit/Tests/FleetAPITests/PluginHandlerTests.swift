@@ -254,6 +254,111 @@ final class PluginHandlerTests: XCTestCase {
         XCTAssertNil(plan.steps[0].env["FLEET_SESSION_ID"])
     }
 
+    func testChildSessionsReceiveAgentDesktop() async throws {
+        let root = temporaryDirectory()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stub = StubDaemon()
+        let handler = handler(stub: stub, root: root, binary: "/usr/bin/true")
+
+        let created = await handler.call(tool: "orchestrate", arguments: json("""
+        {"action":"create","preset":"claude","cwd":"/tmp/work","parent_id":"parent","brief":"use desktop"}
+        """))
+        XCTAssertFalse(created.isError)
+        let session = try XCTUnwrap(stub.created.first)
+        let home = try XCTUnwrap(AgentDesktop.homeDirectory(root: root.path, sessionID: session.id))
+        XCTAssertEqual(session.env["FLEET_AGENT_DESKTOP_BIN"], "/usr/bin/true")
+        XCTAssertEqual(session.env["FLEET_AGENT_DESKTOP_SESSION"], session.id)
+        XCTAssertEqual(session.env["AGENT_DESKTOP_HOME"], home)
+        XCTAssertNil(session.env["FLEET_AGENT_DESKTOP_ROOT"])
+        XCTAssertEqual(session.env["FLEET_SESSION_ID"], session.id)
+        XCTAssertEqual(session.env["TERM"], "xterm-256color")
+        XCTAssertEqual(mode(home), 0o700)
+
+        let planned = await handler.call(tool: "plan", arguments: json("""
+        {"action":"put","parent_id":"parent","steps":[{"preset":"claude","cwd":"/tmp/work"}]}
+        """))
+        XCTAssertFalse(planned.isError)
+        let plan = try XCTUnwrap(stub.plans.first)
+        XCTAssertEqual(plan.steps[0].env["FLEET_AGENT_DESKTOP_BIN"], "/usr/bin/true")
+        XCTAssertEqual(plan.steps[0].env["FLEET_AGENT_DESKTOP_ROOT"], root.path)
+        XCTAssertNil(plan.steps[0].env["AGENT_DESKTOP_HOME"])
+        XCTAssertNil(plan.steps[0].env["FLEET_SESSION_ID"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [session.id])
+
+        let stopped = await handler.call(tool: "orchestrate", arguments: json("""
+        {"action":"stop","session_id":"\(session.id)"}
+        """))
+        XCTAssertFalse(stopped.isError)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: home))
+
+        stub.failCreate = true
+        let failed = await handler.call(tool: "orchestrate", arguments: json("""
+        {"action":"create","preset":"claude","cwd":"/tmp/work","parent_id":"parent","brief":"again"}
+        """))
+        XCTAssertTrue(failed.isError)
+        XCTAssertTrue(stub.sawPreparedHome)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
+    }
+
+    func testABlankAgentDesktopBinaryLeavesTheChildUnchanged() async throws {
+        let root = temporaryDirectory()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stub = StubDaemon()
+        let handler = handler(stub: stub, root: root, binary: " ")
+
+        let created = await handler.call(tool: "orchestrate", arguments: json("""
+        {"action":"create","preset":"claude","cwd":"/tmp/work","parent_id":"parent"}
+        """))
+        XCTAssertFalse(created.isError)
+        let session = try XCTUnwrap(stub.created.first)
+        XCTAssertNil(session.env["FLEET_AGENT_DESKTOP_BIN"])
+        XCTAssertNil(session.env["AGENT_DESKTOP_HOME"])
+        XCTAssertEqual(session.env["FLEET_SESSION_ID"], session.id)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
+    }
+
+    func testToolListMentionsAgentDesktopOnlyWhenItIsInstalled() async throws {
+        let request = Data(#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#.utf8)
+        let stub = StubDaemon()
+        let plain = await PluginRPC.respond(to: request, handler: handler(stub: stub, root: nil, binary: nil))
+        let plainText = String(decoding: try XCTUnwrap(plain), as: UTF8.self)
+        XCTAssertFalse(plainText.contains("FLEET_AGENT_DESKTOP_BIN"))
+
+        let root = URL(fileURLWithPath: "/tmp/fleet-agent-desktop", isDirectory: true)
+        let installed = await PluginRPC.respond(
+            to: request,
+            handler: handler(stub: stub, root: root, binary: "/usr/bin/true")
+        )
+        let text = String(decoding: try XCTUnwrap(installed), as: UTF8.self)
+        XCTAssertTrue(text.contains("FLEET_AGENT_DESKTOP_BIN"))
+        XCTAssertTrue(text.contains("FLEET_AGENT_DESKTOP_SESSION"))
+        XCTAssertFalse(text.contains("--request"))
+        XCTAssertFalse(text.contains("screenshot"))
+        XCTAssertFalse(text.contains("--headed"))
+    }
+
+    private func handler(stub: StubDaemon, root: URL?, binary: String?) -> PluginHandler {
+        PluginHandler(
+            daemon: stub,
+            presets: [PluginPreset(id: "claude", binary: "claude", arguments: [])],
+            resolve: { _ in "/opt/homebrew/bin/claude" },
+            directoryExists: { _ in true },
+            endpoint: nil,
+            uniqueSuffix: { "desk" },
+            agentDesktop: root.flatMap { root in
+                binary.map { AgentDesktop.Installation(binary: $0, root: root.path) }
+            }
+        )
+    }
+
+    private func mode(_ path: String) -> Int {
+        let raw = (try? FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? NSNumber)?
+            .intValue ?? -1
+        return raw & 0o777
+    }
+
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("fleet-plugin-test-\(UUID().uuidString)", isDirectory: true)
@@ -264,11 +369,21 @@ final class PluginHandlerTests: XCTestCase {
     }
 }
 
+private struct StubFailure: Error {}
+
 private final class StubDaemon: PluginDaemon, @unchecked Sendable {
     private let lock = NSLock()
     private var createdStorage: [CreateSession] = []
     private var listedStorage: [String] = []
     private var plansStorage: [PutPlan] = []
+    private var sawPreparedHomeStorage = false
+    var failCreate = false
+
+    var sawPreparedHome: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return sawPreparedHomeStorage
+    }
 
     var created: [CreateSession] {
         lock.lock()
@@ -289,7 +404,7 @@ private final class StubDaemon: PluginDaemon, @unchecked Sendable {
     }
 
     func createSession(_ spec: CreateSession) async throws -> SessionInfo {
-        record(spec)
+        try rejectOrRecord(spec)
         return SessionInfo(
             id: spec.id,
             pid: 1,
@@ -333,10 +448,17 @@ private final class StubDaemon: PluginDaemon, @unchecked Sendable {
         PlanInfo(id: id, parentID: "parent", state: .running, steps: [])
     }
 
-    private func record(_ spec: CreateSession) {
+    private func rejectOrRecord(_ spec: CreateSession) throws {
+        let prepared = spec.env["AGENT_DESKTOP_HOME"].map {
+            FileManager.default.fileExists(atPath: $0)
+        } ?? false
         lock.lock()
+        defer { lock.unlock() }
+        if failCreate {
+            sawPreparedHomeStorage = prepared
+            throw StubFailure()
+        }
         createdStorage.append(spec)
-        lock.unlock()
     }
 
     private func recordList(_ parentID: String?) {

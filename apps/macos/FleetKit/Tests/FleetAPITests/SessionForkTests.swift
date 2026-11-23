@@ -64,6 +64,8 @@ final class SessionForkTests: XCTestCase {
             "OPENCODE_CONFIG_CONTENT": "{}",
             "PATH": "/usr/bin",
             "HTTPS_PROXY": "http://proxy",
+            "AGENT_DESKTOP_HOME": "/tmp/old-home",
+            "FLEET_AGENT_DESKTOP_BIN": "/usr/bin/true",
         ]
         XCTAssertEqual(
             SessionFork.environment(env),

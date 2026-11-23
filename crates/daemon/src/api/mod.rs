@@ -7,8 +7,11 @@ mod tasks;
 mod workspace;
 
 use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
+    collections::{BTreeMap, HashMap, HashSet},
+    fs,
+    io::ErrorKind,
+    os::unix::fs::{MetadataExt, PermissionsExt},
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -554,7 +557,7 @@ async fn execute(
     command: Command,
 ) -> std::result::Result<ResponseData, ApiError> {
     match command {
-        Command::CreateSession(request) => {
+        Command::CreateSession(mut request) => {
             let parent_id = request.parent_id.clone();
             let brief = request.brief.clone();
             if let Some(brief) = brief.as_deref() {
@@ -567,13 +570,21 @@ async fn execute(
                 let parent = session_id(parent.to_owned())?;
                 let _ = find_session(state, &parent).await?;
             }
-            let spec = build_spec(request)?;
-            let handle = state
-                .engine
-                .lock()
-                .await
-                .spawn_session(spec)
-                .map_err(map_engine_error)?;
+            let desktop = materialize_agent_desktop(&mut request.env, &request.id);
+            let spec = match build_spec(request) {
+                Ok(spec) => spec,
+                Err(error) => {
+                    discard_created_home(desktop.as_ref());
+                    return Err(error);
+                }
+            };
+            let handle = match state.engine.lock().await.spawn_session(spec) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    discard_created_home(desktop.as_ref());
+                    return Err(map_engine_error(error));
+                }
+            };
             let info = protocol_info(&handle.info());
             if parent_id.is_some() || brief.is_some() {
                 state
@@ -888,8 +899,10 @@ async fn spawn_plan_step(
     // The app cannot know this id when it submits the plan. The child uses it as parent_id.
     spec.env
         .insert("FLEET_SESSION_ID".to_owned(), session_id.clone());
+    // The home is named with this id. Validation uses a stand-in id and must not create one.
+    let desktop = materialize_agent_desktop(&mut spec.env, &session_id);
     let parent = state.tasks.plan_parent(plan_id).await;
-    let built = build_spec(CreateSession {
+    let built = match build_spec(CreateSession {
         id: session_id.clone(),
         program: spec.program,
         args: spec.args,
@@ -898,13 +911,20 @@ async fn spawn_plan_step(
         size: TerminalSize::new(24, 80),
         parent_id: parent,
         brief: spec.brief.clone(),
-    })?;
-    let handle = state
-        .engine
-        .lock()
-        .await
-        .spawn_session(built)
-        .map_err(map_engine_error)?;
+    }) {
+        Ok(built) => built,
+        Err(error) => {
+            discard_created_home(desktop.as_ref());
+            return Err(error);
+        }
+    };
+    let handle = match state.engine.lock().await.spawn_session(built) {
+        Ok(handle) => handle,
+        Err(error) => {
+            discard_created_home(desktop.as_ref());
+            return Err(map_engine_error(error));
+        }
+    };
     state.tasks.mark_started(plan_id, index, session_id).await;
     state.tasks.bump().await;
     Ok(handle)
@@ -954,6 +974,145 @@ fn engine_size(size: TerminalSize) -> std::result::Result<EngineTerminalSize, Ap
     }
     Ok(EngineTerminalSize::new(size.rows, size.cols)
         .with_pixels(size.pixel_width, size.pixel_height))
+}
+
+const AGENT_DESKTOP_BIN: &str = "FLEET_AGENT_DESKTOP_BIN";
+const AGENT_DESKTOP_ROOT: &str = "FLEET_AGENT_DESKTOP_ROOT";
+const AGENT_DESKTOP_SESSION: &str = "FLEET_AGENT_DESKTOP_SESSION";
+const AGENT_DESKTOP_HOME: &str = "AGENT_DESKTOP_HOME";
+
+struct PreparedHome {
+    path: PathBuf,
+    created: bool,
+}
+
+/// When a caller passed a root, create `root/<session id>` at mode 0700 and
+/// replace the root with the session variables. Returns the directory only
+/// when this call created it, so a failed spawn can delete that directory.
+/// An unsafe id or a directory that cannot be made private drops the variables
+/// instead of sharing `~/.agent-desktop`.
+fn materialize_agent_desktop(
+    env: &mut BTreeMap<String, String>,
+    session_id: &str,
+) -> Option<PreparedHome> {
+    let root = env.remove(AGENT_DESKTOP_ROOT)?;
+    let binary = env
+        .get(AGENT_DESKTOP_BIN)
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let Some(binary) = binary else {
+        clear_agent_desktop(env);
+        return None;
+    };
+    match prepare_agent_desktop_home(root.trim(), session_id) {
+        Some(home) => {
+            env.insert(AGENT_DESKTOP_BIN.to_owned(), binary);
+            env.insert(AGENT_DESKTOP_SESSION.to_owned(), session_id.to_owned());
+            env.insert(
+                AGENT_DESKTOP_HOME.to_owned(),
+                home.path.to_string_lossy().into_owned(),
+            );
+            Some(home)
+        }
+        None => {
+            clear_agent_desktop(env);
+            None
+        }
+    }
+}
+
+fn clear_agent_desktop(env: &mut BTreeMap<String, String>) {
+    env.remove(AGENT_DESKTOP_BIN);
+    env.remove(AGENT_DESKTOP_ROOT);
+    env.remove(AGENT_DESKTOP_SESSION);
+    env.remove(AGENT_DESKTOP_HOME);
+}
+
+fn discard_created_home(home: Option<&PreparedHome>) {
+    if let Some(home) = home.filter(|home| home.created) {
+        remove_private_directory(&home.path);
+    }
+}
+
+fn prepare_agent_desktop_home(root: &str, session_id: &str) -> Option<PreparedHome> {
+    if !is_safe_path_component(session_id) || root.contains('\0') {
+        return None;
+    }
+    let root = PathBuf::from(root);
+    if !root.is_absolute() || !usable_agent_desktop_root(&root) {
+        return None;
+    }
+    let home = root.join(session_id);
+    if home.parent() != Some(root.as_path()) {
+        return None;
+    }
+    let created = match fs::symlink_metadata(&home) {
+        Ok(metadata) if metadata.file_type().is_symlink() => return None,
+        Ok(metadata) if metadata.is_dir() => false,
+        Ok(_) => return None,
+        Err(error) if error.kind() == ErrorKind::NotFound => true,
+        Err(_) => return None,
+    };
+    if created && fs::create_dir(&home).is_err() {
+        return None;
+    }
+    if !private_directory(&home) {
+        if created {
+            remove_private_directory(&home);
+        }
+        return None;
+    }
+    Some(PreparedHome {
+        path: home,
+        created,
+    })
+}
+
+fn usable_agent_desktop_root(root: &Path) -> bool {
+    match fs::symlink_metadata(root) {
+        Ok(metadata) => {
+            !metadata.file_type().is_symlink()
+                && metadata.is_dir()
+                && metadata.uid() == current_uid()
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            fs::create_dir_all(root).is_ok() && private_directory(root)
+        }
+        Err(_) => false,
+    }
+}
+
+fn private_directory(path: &Path) -> bool {
+    if fs::set_permissions(path, fs::Permissions::from_mode(0o700)).is_err() {
+        return false;
+    }
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    !metadata.file_type().is_symlink()
+        && metadata.is_dir()
+        && metadata.uid() == current_uid()
+        && metadata.permissions().mode() & 0o777 == 0o700
+}
+
+fn remove_private_directory(path: &Path) {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return;
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return;
+    }
+    let _ = fs::remove_dir_all(path);
+}
+
+fn is_safe_path_component(id: &str) -> bool {
+    !id.is_empty() && id != "." && id != ".." && !id.contains('/') && !id.contains('\0')
+}
+
+fn current_uid() -> u32 {
+    // SAFETY: geteuid has no preconditions and does not change process state.
+    unsafe { libc::geteuid() }
 }
 
 fn build_spec(request: CreateSession) -> std::result::Result<SessionSpec, ApiError> {
@@ -1097,7 +1256,12 @@ fn map_session_error(error: SessionError) -> ApiError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{
+        collections::BTreeMap,
+        os::unix::fs::PermissionsExt,
+        path::{Path, PathBuf},
+        sync::Arc,
+    };
 
     use fleet_engine::{OutputChunk, SessionId, SessionStatus as EngineSessionStatus};
     use fleet_protocol::api::{CreateSession, ErrorCode, ServerMessage};
@@ -1149,6 +1313,119 @@ mod tests {
             build_spec(zero_size).unwrap_err().code,
             ErrorCode::InvalidTerminalSize
         );
+    }
+
+    #[test]
+    fn agent_desktop_homes_stay_inside_the_root() {
+        let root = temp_root("home");
+        let mut env = desktop_env(&root);
+        env.insert("FLEET_TEST_ENV".into(), "kept".into());
+        let prepared =
+            super::materialize_agent_desktop(&mut env, "session").expect("a private home");
+        let home = root.join("session");
+        assert!(prepared.created);
+        assert_eq!(prepared.path, home);
+        assert_eq!(
+            env.get(super::AGENT_DESKTOP_HOME).map(String::as_str),
+            Some(home.to_str().unwrap())
+        );
+        assert_eq!(
+            env.get(super::AGENT_DESKTOP_SESSION).map(String::as_str),
+            Some("session")
+        );
+        assert_eq!(
+            env.get(super::AGENT_DESKTOP_BIN).map(String::as_str),
+            Some("/usr/bin/true")
+        );
+        assert!(!env.contains_key(super::AGENT_DESKTOP_ROOT));
+        assert_eq!(env.get("FLEET_TEST_ENV").map(String::as_str), Some("kept"));
+        assert_eq!(directory_mode(&home), 0o700);
+
+        super::discard_created_home(Some(&prepared));
+        assert!(!home.exists());
+
+        let outside_name = format!("fleet-outside-{}", std::process::id());
+        let mut escaped = desktop_env(&root);
+        assert!(
+            super::materialize_agent_desktop(&mut escaped, &format!("../{outside_name}")).is_none()
+        );
+        assert!(!escaped.contains_key(super::AGENT_DESKTOP_BIN));
+        assert!(!root.join(&outside_name).exists());
+        assert!(!root.parent().unwrap().join(&outside_name).exists());
+
+        let mut nested = desktop_env(&root);
+        assert!(super::materialize_agent_desktop(&mut nested, "a/b").is_none());
+        assert!(!nested.contains_key(super::AGENT_DESKTOP_BIN));
+        assert!(!root.join("a").exists());
+
+        let relative_name = format!("fleet-agent-desktop-relative-{}", std::process::id());
+        let mut relative = BTreeMap::from([
+            (super::AGENT_DESKTOP_BIN.into(), "/usr/bin/true".into()),
+            (super::AGENT_DESKTOP_ROOT.into(), relative_name.clone()),
+        ]);
+        assert!(super::materialize_agent_desktop(&mut relative, "session").is_none());
+        assert!(!relative.contains_key(super::AGENT_DESKTOP_BIN));
+        assert!(!Path::new(&relative_name).exists());
+        let _ = std::fs::remove_dir_all(&relative_name);
+
+        let outside = temp_root("outside");
+        let link = root.join("linked");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        let mut linked = desktop_env(&root);
+        assert!(super::materialize_agent_desktop(&mut linked, "linked").is_none());
+        assert!(!linked.contains_key(super::AGENT_DESKTOP_BIN));
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+        assert!(std::fs::read_dir(&outside).unwrap().next().is_none());
+
+        let existing = root.join("again");
+        std::fs::create_dir(&existing).unwrap();
+        std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut reuse = desktop_env(&root);
+        let prepared = super::materialize_agent_desktop(&mut reuse, "again").unwrap();
+        assert!(!prepared.created);
+        assert_eq!(directory_mode(&existing), 0o700);
+        super::discard_created_home(Some(&prepared));
+        assert!(existing.exists());
+
+        let mut spec = request();
+        spec.id = "plan-step".into();
+        spec.env = desktop_env(&root);
+        assert!(build_spec(spec).is_ok());
+        assert!(!root.join("plan-step").exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    fn desktop_env(root: &Path) -> BTreeMap<String, String> {
+        BTreeMap::from([
+            (super::AGENT_DESKTOP_BIN.into(), "/usr/bin/true".into()),
+            (
+                super::AGENT_DESKTOP_ROOT.into(),
+                root.to_string_lossy().into_owned(),
+            ),
+        ])
+    }
+
+    fn temp_root(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "fleet-agent-desktop-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&path).expect("temp root");
+        path
+    }
+
+    fn directory_mode(path: &Path) -> u32 {
+        std::fs::symlink_metadata(path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777
     }
 
     fn chunk(seq: u64, text: &str) -> OutputChunk {

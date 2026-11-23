@@ -229,6 +229,9 @@ public struct PluginHandler: Sendable {
     public var directoryExists: @Sendable (String) -> Bool
     public var endpoint: FleetPluginEndpoint?
     public var uniqueSuffix: @Sendable () -> String
+    /// Set when `agent-desktop` is installed. A missing binary leaves this nil
+    /// and child sessions start without those variables.
+    public var agentDesktop: AgentDesktop.Installation?
 
     public init(
         daemon: any PluginDaemon,
@@ -236,7 +239,8 @@ public struct PluginHandler: Sendable {
         resolve: @escaping @Sendable (String) -> String?,
         directoryExists: @escaping @Sendable (String) -> Bool,
         endpoint: FleetPluginEndpoint?,
-        uniqueSuffix: @escaping @Sendable () -> String
+        uniqueSuffix: @escaping @Sendable () -> String,
+        agentDesktop: AgentDesktop.Installation? = nil
     ) {
         self.daemon = daemon
         self.presets = presets
@@ -244,6 +248,7 @@ public struct PluginHandler: Sendable {
         self.directoryExists = directoryExists
         self.endpoint = endpoint
         self.uniqueSuffix = uniqueSuffix
+        self.agentDesktop = agentDesktop
     }
 
     public func call(tool: String, arguments: Data) async -> PluginToolResult {
@@ -275,6 +280,9 @@ public struct PluginHandler: Sendable {
             }
             do {
                 let exit = try await daemon.stopSession(id: id)
+                if let root = agentDesktop?.root {
+                    AgentDesktop.removeHome(sessionID: id, root: root)
+                }
                 return ok([
                     "session_id": id,
                     "success": exit.success,
@@ -302,12 +310,14 @@ public struct PluginHandler: Sendable {
         }
         let cwd = launch.cwd
         let sessionID = makeSessionID(hint: string(object, "brief") ?? launch.program)
+        var environment = sessionEnvironment(sessionID: sessionID)
+        let desktopHome = installAgentDesktop(sessionID: sessionID, into: &environment)
         let spec = CreateSession(
             id: sessionID,
             program: launch.program,
             args: launch.arguments,
             cwd: cwd,
-            env: launch.spec.applying(to: sessionEnvironment(sessionID: sessionID)),
+            env: launch.spec.applying(to: environment),
             size: TerminalSize(rows: 24, cols: 80),
             parentID: parentID,
             brief: string(object, "brief")
@@ -322,6 +332,9 @@ public struct PluginHandler: Sendable {
             if let brief = spec.brief { body["brief"] = brief }
             return ok(body)
         } catch {
+            if let desktopHome, let root = agentDesktop?.root {
+                AgentDesktop.removeHome(sessionID: desktopHome, root: root)
+            }
             return fail(error.localizedDescription)
         }
     }
@@ -377,7 +390,7 @@ public struct PluginHandler: Sendable {
                     program: launch.program,
                     args: launch.arguments,
                     cwd: launch.cwd,
-                    env: launch.spec.applying(to: planStepEnvironment()),
+                    env: launch.spec.applying(to: planEnvironment()),
                     brief: string(raw, "brief")
                 ))
             }
@@ -456,6 +469,40 @@ public struct PluginHandler: Sendable {
             arguments.append(contentsOf: spec.arguments)
         }
         return ResolvedLaunch(program: program, arguments: arguments, spec: spec, cwd: expanded)
+    }
+
+    /// Prepares a private home when the binary is installed. A failure still
+    /// creates the session, without the variables.
+    private func installAgentDesktop(
+        sessionID: String,
+        into environment: inout [String: String]
+    ) -> String? {
+        guard let installed = agentDesktop,
+              let launch = AgentDesktop.launch(
+                binary: installed.binary,
+                sessionID: sessionID,
+                root: installed.root
+              )
+        else { return nil }
+        do {
+            try AgentDesktop.prepareHome(at: launch.home)
+        } catch {
+            AgentDesktop.removeHome(sessionID: sessionID, root: installed.root)
+            return nil
+        }
+        environment.merge(launch.environment) { _, fleet in fleet }
+        return sessionID
+    }
+
+    /// Plan steps do not know their session id yet. The daemon turns the root
+    /// into a private home when it spawns the step.
+    private func planEnvironment() -> [String: String] {
+        var environment = planStepEnvironment()
+        if let installed = agentDesktop,
+           let pending = AgentDesktop.pendingEnvironment(installation: installed) {
+            environment.merge(pending) { _, fleet in fleet }
+        }
+        return environment
     }
 
     private func presetID(forProgram program: String) -> String? {
@@ -537,7 +584,9 @@ public enum PluginRPC {
         case "ping":
             return result(id: id, value: [String: Any]())
         case "tools/list":
-            return result(id: id, value: ["tools": toolDefinitions()])
+            let configured = handler.agentDesktop
+                .flatMap { AgentDesktop.pendingEnvironment(installation: $0) } != nil
+            return result(id: id, value: ["tools": toolDefinitions(agentDesktop: configured)])
         case "tools/call":
             guard let params = object["params"] as? [String: Any],
                   let name = params["name"] as? String else {
@@ -572,10 +621,14 @@ public enum PluginRPC {
         ]
     }
 
-    private static func toolDefinitions() -> [[String: Any]] { [
+    private static func toolDefinitions(agentDesktop: Bool) -> [[String: Any]] {
+        let desktop = agentDesktop
+            ? " When \(AgentDesktop.binaryEnvironmentKey) is set, the child can run that program with --session \(AgentDesktop.sessionEnvironmentKey)."
+            : ""
+        return [
         tool(
             name: "orchestrate",
-            description: "Create or stop a child session. Pass FLEET_SESSION_ID as parent_id. Use preset or program, not both. A missing program creates no session.",
+            description: "Create or stop a child session. Pass FLEET_SESSION_ID as parent_id. Use preset or program, not both. A missing program creates no session.\(desktop)",
             properties: [
                 "action": ["type": "string", "enum": ["create", "stop"]],
                 "preset": ["type": "string"],
@@ -598,7 +651,7 @@ public enum PluginRPC {
         ),
         tool(
             name: "plan",
-            description: "Store a plan and run its steps in order, or read a plan. Pass FLEET_SESSION_ID as parent_id. Exit 0 marks a step done and starts the next. Any other exit stops the plan.",
+            description: "Store a plan and run its steps in order, or read a plan. Pass FLEET_SESSION_ID as parent_id. Exit 0 marks a step done and starts the next. Any other exit stops the plan.\(desktop)",
             properties: [
                 "action": ["type": "string", "enum": ["put", "get"]],
                 "parent_id": ["type": "string"],
